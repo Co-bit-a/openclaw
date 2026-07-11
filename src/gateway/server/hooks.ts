@@ -19,6 +19,7 @@ import type { CronJob } from "../../cron/types.js";
 import { requestHeartbeat } from "../../infra/heartbeat-wake.js";
 import { enqueueSystemEvent } from "../../infra/system-events.js";
 import type { createSubsystemLogger } from "../../logging/subsystem.js";
+import { runWithGatewayIndependentRootWorkContinuation } from "../../process/gateway-work-admission.js";
 import type { HookAgentDispatchPayload, HooksConfigResolved } from "../hooks.js";
 import { createHooksRequestHandler, type HookClientIpConfig } from "./hooks-request-handler.js";
 
@@ -149,7 +150,7 @@ export function createGatewayHooksRequestHandler(params: {
     };
 
     let hookEventSessionKey: string | undefined;
-    void (async () => {
+    void runWithGatewayIndependentRootWorkContinuation(async () => {
       try {
         // Agent hooks run after the HTTP response path has returned, so failure
         // handling must record a system event instead of throwing to the caller.
@@ -221,7 +222,7 @@ export function createGatewayHooksRequestHandler(params: {
           });
         }
       }
-    })();
+    });
 
     return runId;
   };
