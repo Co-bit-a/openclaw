@@ -9,6 +9,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { MAX_TIMER_TIMEOUT_MS } from "@openclaw/normalization-core/number-coercion";
 import { createFileLockManager } from "../infra/file-lock-manager.js";
+import { isGatewayArgv } from "../infra/gateway-process-argv.js";
 import { readGatewayProcessArgsSync as readProcessArgsSync } from "../infra/gateway-processes.js";
 import { getProcessStartTime, isPidAlive } from "../shared/pid-alive.js";
 import {
@@ -453,12 +454,15 @@ function normalizeOwnerProcessArg(arg: string): string {
 }
 
 function isOpenClawSessionOwnerArgv(args: string[]): boolean {
+  if (isGatewayArgv(args, { allowGatewayBinary: true })) {
+    return true;
+  }
   const normalized = args.map(normalizeOwnerProcessArg).filter(Boolean);
   if (normalized.length === 0) {
     return false;
   }
   const exe = (normalized[0] ?? "").replace(/\.(bat|cmd|exe)$/i, "");
-  if (exe === "openclaw" || exe.endsWith("/openclaw") || exe.endsWith("/openclaw-gateway")) {
+  if (exe === "openclaw" || exe.endsWith("/openclaw")) {
     return true;
   }
   if (
@@ -480,9 +484,9 @@ function isOpenClawSessionOwnerArgv(args: string[]): boolean {
     "src/entry.ts",
     "src/index.ts",
   ];
-  const hasOpenClawCommandToken = normalized.some((arg) => arg === "gateway" || arg === "agent");
+  const hasAgentCommandToken = normalized.includes("agent");
   return normalized.some(
-    (arg) => entryCandidates.some((entry) => arg.endsWith(entry)) && hasOpenClawCommandToken,
+    (arg) => entryCandidates.some((entry) => arg.endsWith(entry)) && hasAgentCommandToken,
   );
 }
 
