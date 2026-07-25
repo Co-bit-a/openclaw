@@ -994,6 +994,19 @@ export async function handleOpenResponsesHttpRequest(
     maybeFinalize();
   };
 
+  const finalizeFailedResponse = (response: ResponseResource) => {
+    if (closed) {
+      return;
+    }
+    // Failure is terminal even when an earlier lifecycle event is waiting for usage.
+    closed = true;
+    stopWatchingDisconnect();
+    unsubscribe();
+    writeSseEvent(res, { type: "response.failed", response });
+    writeDone(res);
+    res.end();
+  };
+
   // Send initial events
   const initialResponse = createResponseResource({
     id: responseId,
@@ -1314,7 +1327,7 @@ export async function handleOpenResponsesHttpRequest(
           usage: finalUsage,
         });
 
-        writeSseEvent(res, { type: "response.failed", response: errorResponse });
+        finalizeFailedResponse(errorResponse);
         emitAgentEvent({
           runId: responseId,
           stream: "lifecycle",
@@ -1345,7 +1358,7 @@ export async function handleOpenResponsesHttpRequest(
           usage: finalUsage,
         });
         rememberResponseSession();
-        writeSseEvent(res, { type: "response.failed", response: mappedResponse });
+        finalizeFailedResponse(mappedResponse);
         emitAgentEvent({
           runId: responseId,
           stream: "lifecycle",
@@ -1354,7 +1367,7 @@ export async function handleOpenResponsesHttpRequest(
         return;
       }
       rememberResponseSession();
-      writeSseEvent(res, { type: "response.failed", response: errorResponse });
+      finalizeFailedResponse(errorResponse);
       emitAgentEvent({
         runId: responseId,
         stream: "lifecycle",
