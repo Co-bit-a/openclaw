@@ -2,6 +2,7 @@
  * Tests for usage-report gateway methods and aggregation responses.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
 import type { OpenClawConfig } from "../../config/config.js";
 
 vi.mock("../../infra/session-cost-usage.js", async () => {
@@ -146,6 +147,8 @@ describe("gateway usage helpers", () => {
     [{ endDate: "2026-2-5" }, "invalid endDate"],
     [{ startDate: 0 }, "invalid startDate"],
     [{ endDate: [] }, "invalid endDate"],
+    [{ startDate: "2026-02-01" }, "startDate and endDate must be provided together"],
+    [{ endDate: "2026-02-01" }, "startDate and endDate must be provided together"],
     [{ startDate: "2026-02-01", endDate: "2026-13-01" }, "invalid endDate"],
     [{ startDate: "2026-02-03", endDate: "2026-02-02" }, "startDate must not be after endDate"],
   ])("resolveDateRange rejects invalid explicit ranges", (params, error) => {
@@ -189,6 +192,31 @@ describe("gateway usage helpers", () => {
       expect(vi.mocked(loadCostUsageSummaryFromCache)).not.toHaveBeenCalled();
     },
   );
+
+  it.each([
+    ["usage.cost", { startDate: "2026-02-01" }],
+    ["usage.cost", { endDate: "2026-02-01" }],
+    ["sessions.usage", { startDate: "2026-02-01" }],
+    ["sessions.usage", { endDate: "2026-02-01" }],
+  ] as const)("%s rejects an incomplete explicit date range", async (method, params) => {
+    const respond = vi.fn();
+    await expectDefined(
+      usageHandlers[method],
+      "usageHandlers[method] test invariant",
+    )({
+      respond,
+      params,
+      context: { getRuntimeConfig: vi.fn(() => ({})) },
+    } as unknown as Parameters<(typeof usageHandlers)[typeof method]>[0]);
+
+    expect(respond).toHaveBeenCalledWith(
+      false,
+      undefined,
+      errorShape(ErrorCodes.INVALID_REQUEST, "startDate and endDate must be provided together"),
+    );
+    expect(vi.mocked(loadCostUsageSummaryFromCache)).not.toHaveBeenCalled();
+    expect(vi.mocked(discoverAllSessions)).not.toHaveBeenCalled();
+  });
 
   it("parseUtcOffsetToMinutes supports whole-hour and half-hour offsets", () => {
     expect(testApi.parseUtcOffsetToMinutes("UTC-4")).toBe(-240);
