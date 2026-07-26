@@ -256,7 +256,7 @@ export async function modelsListCommand(
   } catch {
     // Tags are annotation-only.
   }
-  if (rows.length === 0) {
+  if (rows.length === 0 && !opts.json && !opts.plain) {
     runtime.log("No models found.");
   } else {
     printModelTable(rows, runtime, opts);
