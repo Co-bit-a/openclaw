@@ -89,7 +89,10 @@ import {
 } from "./open-responses.schema.js";
 import { resolveAgentRunUsage } from "./openai-agent-run-usage.js";
 import { resolveOpenAiCompatError } from "./openai-compat-errors.js";
-import { resolveOpenAiHttpAgentRunTerminalOutcome } from "./openai-http-terminal-outcome.js";
+import {
+  resolveOpenAiHttpAgentRunTerminalOutcome,
+  resolveOpenAiHttpResultText,
+} from "./openai-http-terminal-outcome.js";
 import {
   isToolChoiceConstraintSatisfied,
   resolveUnsatisfiedToolChoiceMessage,
@@ -912,11 +915,8 @@ export async function handleOpenResponsesHttpRequest(
   let unsubscribe = () => {};
   let stopWatchingDisconnect = () => {};
   let finalUsage: Usage | undefined;
-  type StreamFinalization =
-    | { status: "completed"; text: string; outcome?: AgentRunTerminalOutcome }
-    | { status: "failed"; outcome: AgentRunTerminalOutcome };
-  let finalizeRequested: StreamFinalization | null = null;
-  const readFinalization = (): StreamFinalization | null => finalizeRequested;
+  let finalizeRequested: { status: "completed" | "failed"; text: string } | null = null;
+  let terminalOutcome: AgentRunTerminalOutcome | undefined;
   let finalizeScheduled = false;
   let terminalLifecyclePhase: "end" | "error" = "end";
   let terminalStreamError: string | undefined;
@@ -951,15 +951,14 @@ export async function handleOpenResponsesHttpRequest(
         finalizeUnrepresentableAssistantReplacement();
         return;
       }
-      const completedFinalization = finalizeRequested;
-      if (completedFinalization.status !== "completed") {
+      if (finalizeRequested.status !== "completed") {
         finalizeScheduled = false;
         maybeFinalize();
         return;
       }
       const usage = finalUsage;
       const finalText =
-        accumulatedText || bufferedReplaceableAssistantContent || completedFinalization.text;
+        accumulatedText || bufferedReplaceableAssistantContent || finalizeRequested.text;
 
       closed = true;
       stopWatchingDisconnect();
@@ -1009,9 +1008,9 @@ export async function handleOpenResponsesHttpRequest(
     });
   };
 
-  const requestFinalize = (terminal: StreamFinalization) => {
+  const requestFinalize = (status: "completed" | "failed", text = "") => {
     // Attempt errors stay provisional while a successful fallback can recover.
-    finalizeRequested = terminal;
+    finalizeRequested = { status, text };
     maybeFinalize();
   };
 
@@ -1166,18 +1165,15 @@ export async function handleOpenResponsesHttpRequest(
           phase,
           data: evt.data,
         });
-        const outcome = mergeAgentRunTerminalOutcome(finalizeRequested?.outcome, incomingOutcome);
+        const outcome = mergeAgentRunTerminalOutcome(terminalOutcome, incomingOutcome);
+        terminalOutcome = outcome;
         if (outcome.reason !== "completed") {
-          requestFinalize({ status: "failed", outcome });
+          requestFinalize("failed");
         } else {
-          requestFinalize({
-            status: "completed",
-            text:
-              accumulatedText ||
-              bufferedReplaceableAssistantContent ||
-              "No response from OpenClaw.",
-            outcome,
-          });
+          requestFinalize(
+            "completed",
+            accumulatedText || bufferedReplaceableAssistantContent || "No response from OpenClaw.",
+          );
         }
       }
     }
@@ -1236,15 +1232,14 @@ export async function handleOpenResponsesHttpRequest(
       }
 
       finalUsage = extractUsageFromResult(result);
-      const resultOutcome = resolveOpenAiHttpAgentRunTerminalOutcome(result);
-      if (resultOutcome.reason !== "completed") {
-        requestFinalize({
-          status: "failed",
-          outcome: mergeAgentRunTerminalOutcome(readFinalization()?.outcome, resultOutcome),
-        });
+      const priorFinalization = finalizeRequested;
+      const outcome = resolveOpenAiHttpAgentRunTerminalOutcome(result, terminalOutcome);
+      terminalOutcome = outcome;
+      if (outcome.reason !== "completed") {
+        requestFinalize("failed");
         return;
       }
-      if (readFinalization()?.status === "failed" && terminalStreamError) {
+      if (priorFinalization?.status === "failed" && terminalStreamError) {
         const failedResponse = createResponseResource({
           id: responseId,
           model,
@@ -1257,11 +1252,6 @@ export async function handleOpenResponsesHttpRequest(
         finalizeFailedResponse(failedResponse);
         return;
       }
-      const outcome = resolveOpenAiHttpAgentRunTerminalOutcome(result, readFinalization()?.outcome);
-      if (outcome.reason !== "completed") {
-        requestFinalize({ status: "failed", outcome });
-        return;
-      }
 
       if (unrepresentableAssistantReplacement) {
         finalizeUnrepresentableAssistantReplacement();
@@ -1271,7 +1261,7 @@ export async function handleOpenResponsesHttpRequest(
       // Check for pending client tool calls BEFORE maybeFinalize() because the
       // lifecycle:end event may already have requested finalization.
       const resultAny = result as { meta?: unknown };
-      const resultPayloadText = resolveResponsePayloadText(result);
+      const resultPayloadText = resolveOpenAiHttpResultText(result);
       const meta = resultAny.meta;
       const { stopReason, pendingToolCalls } = resolveStopReasonAndPendingToolCalls(meta);
 
@@ -1404,9 +1394,8 @@ export async function handleOpenResponsesHttpRequest(
 
         accumulatedText = content;
         sawAssistantDelta = true;
-        const finalization = readFinalization();
-        if (finalization?.status === "completed") {
-          finalizeRequested = { ...finalization, text: content };
+        if (finalizeRequested?.status === "completed") {
+          finalizeRequested = { ...finalizeRequested, text: content };
         }
 
         writeSseEvent(res, {

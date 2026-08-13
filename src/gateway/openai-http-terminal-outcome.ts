@@ -5,29 +5,50 @@ import {
   type AgentRunTerminalOutcome,
 } from "../agents/agent-run-terminal-outcome.js";
 import { hasVisibleAgentPayload } from "../agents/embedded-agent-runner/message-visibility.js";
+import { isReplyPayloadStatusNotice, type ReplyPayload } from "../auto-reply/reply-payload.js";
+
+type LifecycleData = NonNullable<
+  Parameters<typeof buildAgentRunTerminalOutcomeFromLifecycleEvent>[0]["data"]
+>;
 
 type OpenAiHttpAgentResult = {
-  payloads?: Array<{
-    isError?: boolean;
-    isCommentary?: boolean;
-    isCompactionNotice?: boolean;
-    isFallbackNotice?: boolean;
-    isReasoningSnapshot?: boolean;
-    isStatusNotice?: boolean;
-    text?: string;
-    visible?: boolean;
-  }>;
-  meta?: {
-    aborted?: boolean;
-    error?: unknown;
-    stopReason?: unknown;
-    livenessState?: unknown;
-    timeoutPhase?: unknown;
-    providerStarted?: unknown;
-    startedAt?: unknown;
-    endedAt?: unknown;
-  };
+  payloads?: ReplyPayload[];
+  meta?: LifecycleData;
 };
+
+function isTerminalPayload(payload: ReplyPayload): boolean {
+  if (payload.isError === true) {
+    return true;
+  }
+  if (
+    payload.isCommentary === true ||
+    payload.isReasoningSnapshot === true ||
+    isReplyPayloadStatusNotice(payload) ||
+    (payload as ReplyPayload & { visible?: unknown }).visible === false
+  ) {
+    return false;
+  }
+  return hasVisibleAgentPayload(
+    { payloads: [payload] },
+    {
+      includeErrorPayloads: false,
+      includeReasoningPayloads: false,
+      includeSilentReplyPayloads: false,
+    },
+  );
+}
+
+/** Return model-visible result text without leaking historical error payloads. */
+export function resolveOpenAiHttpResultText(result: unknown): string {
+  const payloads = (result as OpenAiHttpAgentResult | null | undefined)?.payloads;
+  return Array.isArray(payloads)
+    ? payloads
+        .filter((payload) => payload.isError !== true)
+        .map((payload) => (typeof payload.text === "string" ? payload.text : ""))
+        .filter(Boolean)
+        .join("\n\n")
+    : "";
+}
 
 /** Preserve real provider failures even when the agent resolves its result. */
 export function resolveOpenAiHttpAgentRunTerminalOutcome(
@@ -38,32 +59,12 @@ export function resolveOpenAiHttpAgentRunTerminalOutcome(
   const meta = agentResult?.meta;
   // Completed tool calls can intentionally make a successful turn unsafe to
   // replay. Replay safety alone is not a provider or terminal-run failure.
-  // Recovery may retain a failed attempt before its final visible reply.
-  // Only the last visible/error payload owns the HTTP terminal result.
-  const terminalPayload = agentResult?.payloads?.findLast(
-    (payload) =>
-      payload.isError === true ||
-      (payload.isCommentary !== true &&
-        payload.isCompactionNotice !== true &&
-        payload.isFallbackNotice !== true &&
-        payload.isReasoningSnapshot !== true &&
-        payload.isStatusNotice !== true &&
-        payload.visible !== false &&
-        hasVisibleAgentPayload(
-          { payloads: [payload] },
-          {
-            includeErrorPayloads: false,
-            includeReasoningPayloads: false,
-            includeSilentReplyPayloads: false,
-          },
-        )),
-  );
-  const resultFailed = meta?.error != null || terminalPayload?.isError === true;
-
+  // Only the last real visible/error payload owns recovered fallback state.
+  const terminalPayload = agentResult?.payloads?.findLast(isTerminalPayload);
   return mergeAgentRunTerminalOutcome(
     previous,
     buildAgentRunTerminalOutcomeFromLifecycleEvent({
-      phase: resultFailed ? "error" : "end",
+      phase: meta?.error != null || terminalPayload?.isError === true ? "error" : "end",
       data: meta,
     }),
   );
