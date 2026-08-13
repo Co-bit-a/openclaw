@@ -11,6 +11,11 @@ import {
 import { avoidTrailingHighSurrogateBreak } from "@openclaw/normalization-core/utf16-slice";
 import { z } from "zod";
 import type { AdmittedRunContext } from "../agents/admitted-run-context.js";
+import {
+  buildAgentRunTerminalOutcomeFromLifecycleEvent,
+  mergeAgentRunTerminalOutcome,
+  type AgentRunTerminalOutcome,
+} from "../agents/agent-run-terminal-outcome.js";
 import { isClientToolNameConflictError } from "../agents/agent-tool-definition-adapter.js";
 import type { AgentStreamParams, ClientToolDefinition } from "../agents/command/shared-types.js";
 import type { ImageContent } from "../agents/command/types.js";
@@ -74,11 +79,8 @@ import {
 } from "./http-utils.js";
 import { normalizeInputHostnameAllowlist } from "./input-allowlist.js";
 import { resolveAgentRunUsage } from "./openai-agent-run-usage.js";
-import {
-  isFailedOpenAiAgentRun,
-  resolveOpenAiCompatError,
-  validateOpenAiSamplingParams,
-} from "./openai-compat-errors.js";
+import { resolveOpenAiCompatError, validateOpenAiSamplingParams } from "./openai-compat-errors.js";
+import { resolveOpenAiHttpAgentRunTerminalOutcome } from "./openai-http-terminal-outcome.js";
 import {
   isToolChoiceConstraintSatisfied,
   resolveUnsatisfiedToolChoiceMessage,
@@ -721,11 +723,13 @@ function buildAgentPrompt(
 }
 
 function resolveAgentResponseText(result: unknown): string {
-  const payloads = (result as { payloads?: Array<{ text?: string }> } | null)?.payloads;
+  const payloads = (result as { payloads?: Array<{ isError?: boolean; text?: string }> } | null)
+    ?.payloads;
   if (!Array.isArray(payloads) || payloads.length === 0) {
     return "No response from OpenClaw.";
   }
   const content = payloads
+    .filter((payload) => payload.isError !== true)
     .map((p) => (typeof p.text === "string" ? p.text : ""))
     .filter(Boolean)
     .join("\n\n");
@@ -733,11 +737,13 @@ function resolveAgentResponseText(result: unknown): string {
 }
 
 function resolveAgentResponseCommentary(result: unknown): string {
-  const payloads = (result as { payloads?: Array<{ text?: string }> } | null)?.payloads;
+  const payloads = (result as { payloads?: Array<{ isError?: boolean; text?: string }> } | null)
+    ?.payloads;
   if (!Array.isArray(payloads) || payloads.length === 0) {
     return "";
   }
   return payloads
+    .filter((payload) => payload.isError !== true)
     .map((p) => (typeof p.text === "string" ? p.text : ""))
     .filter(Boolean)
     .join("\n\n");
@@ -1079,11 +1085,15 @@ export async function handleOpenAiHttpRequest(
         return true;
       }
 
-      const meta = (result as { meta?: { error?: unknown; stopReason?: unknown } } | null)?.meta;
-      if (isFailedOpenAiAgentRun(result)) {
-        throw new Error("agent run failed");
+      if (resolveOpenAiHttpAgentRunTerminalOutcome(result).reason !== "completed") {
+        sendJson(res, 502, {
+          error: { message: "internal error", type: "api_error" },
+        });
+        return true;
       }
+
       const usage = resolveChatCompletionUsage(result);
+      const meta = (result as { meta?: unknown } | null)?.meta;
       const { stopReason, pendingToolCalls } = resolveStopReasonAndPendingToolCalls(meta);
 
       // `tool_choice` is an HTTP client-tool contract. The provider may still
@@ -1179,21 +1189,46 @@ export async function handleOpenAiHttpRequest(
   let bufferedAssistantContent = "";
   let bufferedReplaceableAssistantContent = "";
   let finalUsage: OpenAiChatCompletionsUsage | undefined;
-  let finalizeRequested = false;
+  type StreamFinalization =
+    | {
+        status: "completed";
+        finishReason: "stop" | "tool_calls";
+        outcome?: AgentRunTerminalOutcome;
+      }
+    | { status: "failed"; outcome: AgentRunTerminalOutcome };
+  let finalizeRequested: StreamFinalization | null = null;
+  const readFinalization = (): StreamFinalization | null => finalizeRequested;
   let finalizeScheduled = false;
-  let finalizeFinishReason: "stop" | "tool_calls" = "stop";
   let resultResolved = false;
   let closed = false;
   let observedTerminalLifecycle = false;
   let terminalStreamError: { message: string; type: string; code?: string } | undefined;
   let terminalLifecyclePhase: "end" | "error" = "end";
+  let unsubscribe = () => {};
   let stopWatchingDisconnect = () => {};
 
-  const maybeFinalize = () => {
-    if (closed || finalizeScheduled || !finalizeRequested) {
+  const finalizeFailedStream = (error: { message: string; type: string; code?: string }) => {
+    if (closed) {
       return;
     }
-    if (!resultResolved) {
+    closed = true;
+    stopWatchingDisconnect();
+    unsubscribe();
+    if (streamIncludeUsage && finalUsage) {
+      writeUsageChunk(res, { runId, model, usage: finalUsage });
+    }
+    writeSse(res, { error });
+    writeDone(res);
+    res.end();
+  };
+
+  const maybeFinalize = () => {
+    if (closed || finalizeScheduled || !finalizeRequested || !resultResolved) {
+      return;
+    }
+    // Resolved preserved errors are failures, not successful assistant stops.
+    if (finalizeRequested.status === "failed") {
+      finalizeFailedStream({ message: "internal error", type: "api_error" });
       return;
     }
     if (streamIncludeUsage && !finalUsage) {
@@ -1204,6 +1239,16 @@ export async function handleOpenAiHttpRequest(
     finalizeScheduled = true;
     queueMicrotask(() => {
       if (closed) {
+        return;
+      }
+      const finalization = finalizeRequested;
+      if (!finalization) {
+        finalizeScheduled = false;
+        return;
+      }
+      if (finalization.status === "failed") {
+        finalizeScheduled = false;
+        maybeFinalize();
         return;
       }
       if (terminalStreamError) {
@@ -1225,15 +1270,31 @@ export async function handleOpenAiHttpRequest(
     });
   };
 
-  const requestFinalize = (finishReason: "stop" | "tool_calls" = "stop") => {
-    if (!finalizeRequested || finishReason === "tool_calls") {
-      finalizeFinishReason = finishReason;
-    }
-    finalizeRequested = true;
+  const requestFinalize = (
+    finishReason: "stop" | "tool_calls" = "stop",
+    outcome?: AgentRunTerminalOutcome,
+  ) => {
+    // Failed attempts remain provisional until a recovered fallback settles.
+    const previous = readFinalization();
+    const preservedFinishReason =
+      previous?.status === "completed" && previous.finishReason === "tool_calls"
+        ? "tool_calls"
+        : finishReason;
+    const preservedOutcome = outcome ?? previous?.outcome;
+    finalizeRequested = {
+      status: "completed",
+      finishReason: preservedFinishReason,
+      ...(preservedOutcome ? { outcome: preservedOutcome } : {}),
+    };
     maybeFinalize();
   };
 
-  const unsubscribe = onAgentEventForRun(runId, (evt) => {
+  const requestFailedStream = (outcome: AgentRunTerminalOutcome) => {
+    finalizeRequested = { status: "failed", outcome };
+    maybeFinalize();
+  };
+
+  unsubscribe = onAgentEventForRun(runId, (evt) => {
     if (evt.runId !== runId) {
       return;
     }
@@ -1315,7 +1376,16 @@ export async function handleOpenAiHttpRequest(
             type: "api_error",
           };
         }
-        requestFinalize();
+        const incomingOutcome = buildAgentRunTerminalOutcomeFromLifecycleEvent({
+          phase,
+          data: evt.data,
+        });
+        const outcome = mergeAgentRunTerminalOutcome(finalizeRequested?.outcome, incomingOutcome);
+        if (outcome.reason === "completed") {
+          requestFinalize("stop", outcome);
+        } else {
+          requestFailedStream(outcome);
+        }
       }
     }
   });
@@ -1367,18 +1437,17 @@ export async function handleOpenAiHttpRequest(
         return;
       }
 
-      if (isFailedOpenAiAgentRun(result)) {
-        terminalLifecyclePhase = "error";
-        finishStreamWithError({ message: "internal error", type: "api_error" });
-        return;
-      }
-
+      finalUsage = resolveChatCompletionUsage(result);
       if (terminalStreamError) {
         finishStreamWithError(terminalStreamError);
         return;
       }
+      const outcome = resolveOpenAiHttpAgentRunTerminalOutcome(result, readFinalization()?.outcome);
+      if (outcome.reason !== "completed") {
+        requestFailedStream(outcome);
+        return;
+      }
 
-      finalUsage = resolveChatCompletionUsage(result);
       const meta = (result as { meta?: unknown } | null)?.meta;
       const { stopReason, pendingToolCalls } = resolveStopReasonAndPendingToolCalls(meta);
 
