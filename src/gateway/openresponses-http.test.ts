@@ -329,7 +329,6 @@ const PRESERVED_STREAM_LIFECYCLE_CASES = [
   { label: "without an error lifecycle", emitError: false, emitEnd: false },
   { label: "after a superseded error lifecycle", emitError: true, emitEnd: true },
 ] as const;
-
 function buildUrlInputMessage(params: {
   kind: "input_file" | "input_image";
   url: string;
@@ -2130,10 +2129,41 @@ describe("OpenResponses HTTP API (e2e)", () => {
           prompt_cache_breakpoint: { mode: "explicit" },
         },
         {
-          type: "input_image",
-          detail: "auto",
-          image_url: "https://example.invalid/sdk-tool-image.png",
-        },
+          type: "message",
+          id: "msg_replay_1",
+          role: "assistant",
+          phase: null,
+          status: "completed",
+          content: [
+            {
+              type: "output_text",
+              text: "Checking the weather.",
+              annotations: [
+                {
+                  type: "url_citation",
+                  start_index: 0,
+                  end_index: 8,
+                  title: "Weather",
+                  url: "https://example.invalid/weather",
+                },
+              ],
+              logprobs: [
+                {
+                  token: "Checking",
+                  bytes: [67, 104, 101, 99, 107, 105, 110, 103],
+                  logprob: -0.25,
+                  top_logprobs: [
+                    {
+                      token: "Checking",
+                      bytes: [67, 104, 101, 99, 107, 105, 110, 103],
+                      logprob: -0.25,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        } satisfies OpenAI.Responses.ResponseOutputMessage,
         {
           type: "input_file",
           detail: "auto",
