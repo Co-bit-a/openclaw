@@ -1179,10 +1179,16 @@ export async function handleOpenAiHttpRequest(
   let resultResolved = false;
   let closed = false;
   let observedTerminalLifecycle = false;
-  let terminalStreamError: { message: string; type: string; code?: string } | undefined;
+  let terminalProtocolError: { message: string; type: string; code?: string } | undefined;
+  let terminalLifecycleError: { message: string; type: string; code?: string } | undefined;
+  // A lifecycle error can describe one failed fallback attempt; only a later
+  // lifecycle end recovers it. Append-only protocol errors remain terminal.
+  let lifecycleErrorRecovered = false;
   let terminalLifecyclePhase: "end" | "error" = "end";
   let unsubscribe = () => {};
   let stopWatchingDisconnect = () => {};
+  const readActiveStreamError = () =>
+    terminalProtocolError ?? (lifecycleErrorRecovered ? undefined : terminalLifecycleError);
 
   const finishStreamWithError = (
     error: { message: string; type: string; code?: string },
@@ -1226,8 +1232,9 @@ export async function handleOpenAiHttpRequest(
         maybeFinalize();
         return;
       }
-      if (terminalStreamError) {
-        finishStreamWithError(terminalStreamError);
+      const streamError = readActiveStreamError();
+      if (streamError) {
+        finishStreamWithError(streamError);
         return;
       }
       closed = true;
@@ -1294,7 +1301,7 @@ export async function handleOpenAiHttpRequest(
         !toolChoiceConstraint &&
         !text.startsWith(streamedAssistantText)
       ) {
-        terminalStreamError ??= {
+        terminalProtocolError ??= {
           message: "Assistant output cannot be represented as an append-only response stream.",
           type: "api_error",
         };
@@ -1341,7 +1348,8 @@ export async function handleOpenAiHttpRequest(
       if (phase === "end" || phase === "error") {
         observedTerminalLifecycle = true;
         if (phase === "error" && terminalLifecyclePhase !== "error") {
-          terminalStreamError ??= {
+          lifecycleErrorRecovered = false;
+          terminalLifecycleError ??= {
             message: normalizeOptionalString(evt.data?.error) ?? "Agent run failed",
             type: "api_error",
           };
@@ -1351,6 +1359,9 @@ export async function handleOpenAiHttpRequest(
           data: evt.data,
         });
         const outcome = mergeAgentRunTerminalOutcome(terminalOutcome, incomingOutcome);
+        if (phase === "end" && terminalLifecycleError && outcome.reason === "completed") {
+          lifecycleErrorRecovered = true;
+        }
         if (outcome.reason === "completed") {
           requestFinalize("stop", outcome);
         } else {
@@ -1398,8 +1409,9 @@ export async function handleOpenAiHttpRequest(
       finalUsage = resolveChatCompletionUsage(result);
       const outcome = resolveOpenAiHttpAgentRunTerminalOutcome(result, terminalOutcome);
       terminalOutcome = outcome;
-      if (terminalStreamError) {
-        finishStreamWithError(terminalStreamError);
+      const streamError = readActiveStreamError();
+      if (streamError) {
+        finishStreamWithError(streamError);
         return;
       }
       if (outcome.reason !== "completed") {
@@ -1490,8 +1502,9 @@ export async function handleOpenAiHttpRequest(
         finishStreamWithError(mapped.error);
         return;
       }
-      if (terminalStreamError) {
-        finishStreamWithError(terminalStreamError);
+      const streamError = terminalProtocolError ?? terminalLifecycleError;
+      if (streamError) {
+        finishStreamWithError(streamError);
         return;
       }
       finishStreamWithError({ message: "internal error", type: "api_error" });

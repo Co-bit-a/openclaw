@@ -2771,6 +2771,42 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
     expect(finishChoice?.finish_reason).toBe("stop");
   });
 
+  it("completes a stream when a failed attempt is superseded by fallback success", async () => {
+    agentCommandMock.mockClear();
+    agentCommandMock.mockImplementationOnce((async (opts: unknown) => {
+      const runId = (opts as { runId?: string }).runId;
+      if (!runId) {
+        throw new Error("expected a streaming chat-completion run ID");
+      }
+      emitAgentEvent({
+        runId,
+        stream: "lifecycle",
+        data: { phase: "error", error: "raw primary provider failure" },
+      });
+      emitAgentEvent({ runId, stream: "lifecycle", data: { phase: "end" } });
+      return { payloads: [{ text: "fallback recovered" }] };
+    }) as never);
+
+    const stream = await createOpenAiChatClient(enabledPort).chat.completions.create({
+      model: "openclaw",
+      messages: [{ role: "user", content: "Recover with the fallback." }],
+      stream: true,
+    });
+    const content: string[] = [];
+    const finishReasons: Array<string | null> = [];
+    for await (const chunk of stream) {
+      for (const choice of chunk.choices) {
+        if (typeof choice.delta.content === "string") {
+          content.push(choice.delta.content);
+        }
+        finishReasons.push(choice.finish_reason);
+      }
+    }
+
+    expect(content.join("")).toBe("fallback recovered");
+    expect(finishReasons.at(-1)).toBe("stop");
+  });
+
   it.each([
     { name: "resolved", reject: false },
     { name: "rejected", reject: true },
