@@ -13,6 +13,7 @@ import {
 import { createClientToolNameConflictError } from "../agents/agent-tool-definition-adapter.js";
 import { createAgentCommandLifecycle } from "../agents/command/lifecycle.js";
 import { FailoverError } from "../agents/failover-error.js";
+import { DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS } from "../agents/tool-result-limits.js";
 import { HISTORY_CONTEXT_MARKER } from "../auto-reply/reply/history.js";
 import { CURRENT_MESSAGE_MARKER } from "../auto-reply/reply/mentions.js";
 import { resetConfigRuntimeState } from "../config/config.js";
@@ -2260,6 +2261,33 @@ describe("OpenResponses HTTP API (e2e)", () => {
       expect(agentCommand).toHaveBeenCalledTimes(1);
     },
   );
+
+  it("rejects structured tool output that exceeds the model-visible prompt budget", async () => {
+    agentCommandMock.mockClear();
+    const res = await postResponses(enabledPort, {
+      model: "openclaw",
+      input: [
+        {
+          type: "function_call_output",
+          call_id: "call_oversized",
+          output: [
+            {
+              type: "input_text",
+              text: "x".repeat(DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS + 1),
+            },
+          ],
+        },
+      ],
+    });
+
+    const body = (await res.json()) as { error?: { message?: string; type?: string } };
+    expect(res.status).toBe(400);
+    expect(body.error?.type).toBe("invalid_request_error");
+    expect(body.error?.message).toContain(
+      `${DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS}-character live tool-result limit`,
+    );
+    expect(agentCommandMock).not.toHaveBeenCalled();
+  });
 
   it.each([
     {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS } from "../agents/tool-result-limits.js";
 import { IMAGE_ONLY_USER_MESSAGE } from "./agent-prompt.js";
 import { CreateResponseBodySchema } from "./open-responses.schema.js";
 import { wrapUntrustedFileContent } from "./openresponses-file-content.js";
@@ -137,6 +138,28 @@ describe("OpenResponses aggregate behavior", () => {
     expect(result.message).toContain("Run the lookup");
     expect(result.message).toContain('{"ok":true}');
     expect(result.message).toContain("Summarize it");
+  });
+
+  it("enforces the canonical live tool-result prompt budget", () => {
+    expect(
+      buildAgentPrompt([
+        {
+          type: "function_call_output",
+          call_id: "call-max",
+          output: "x".repeat(DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS),
+        },
+      ]).message,
+    ).toHaveLength(DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS);
+
+    expect(() =>
+      buildAgentPrompt([
+        {
+          type: "function_call_output",
+          call_id: "call-oversized",
+          output: "x".repeat(DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS + 1),
+        },
+      ]),
+    ).toThrow(`${DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS}-character live tool-result limit`);
   });
 
   it("preserves attachment-only turn placeholders", () => {

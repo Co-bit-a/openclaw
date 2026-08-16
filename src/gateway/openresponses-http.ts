@@ -100,7 +100,7 @@ import {
   type ToolChoiceConstraint,
 } from "./openai-tool-choice.js";
 import { wrapUntrustedFileContent } from "./openresponses-file-content.js";
-import { buildAgentPrompt } from "./openresponses-prompt.js";
+import { buildAgentPrompt, OpenResponsesToolOutputTooLargeError } from "./openresponses-prompt.js";
 import { createAssistantOutputItem, createFunctionCallOutputItem } from "./openresponses-shape.js";
 import { authorizeGatewaySessionCreation } from "./operator-role-policy.js";
 import type { GatewayContextResolver } from "./server-methods/types.js";
@@ -538,7 +538,18 @@ export async function handleOpenResponsesHttpRequest(
     return true;
   }
 
-  const prompt = buildAgentPrompt(payload.input);
+  let prompt: ReturnType<typeof buildAgentPrompt>;
+  try {
+    prompt = buildAgentPrompt(payload.input);
+  } catch (err) {
+    if (err instanceof OpenResponsesToolOutputTooLargeError) {
+      sendJson(res, 400, {
+        error: { message: err.message, type: "invalid_request_error" },
+      });
+      return true;
+    }
+    throw err;
+  }
 
   // Count URL sources request-wide, but replay media only from the current user turn.
   let images: ImageContent[] = [];
