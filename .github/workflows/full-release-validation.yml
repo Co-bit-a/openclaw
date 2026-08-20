@@ -87,11 +87,6 @@ on:
           - qa-live
           - npm-telegram
           - performance
-      plugin_prerelease_node_exclude_patterns_json:
-        description: Exact Plugin Prerelease Node test paths omitted only for frozen-target validation
-        required: false
-        default: "[]"
-        type: string
       reuse_evidence:
         description: Reuse matching green product validation for the same target or a changelog-only Release SHA
         required: false
@@ -421,9 +416,7 @@ jobs:
           RERUN_GROUP: ${{ inputs.rerun_group }}
           LIVE_SUITE_FILTER: ${{ steps.filters.outputs.live_suite_filter }}
           CROSS_OS_SUITE_FILTER: ${{ steps.filters.outputs.cross_os_suite_filter }}
-          PLUGIN_PRERELEASE_NODE_EXCLUDE_PATTERNS_JSON: ${{ inputs.plugin_prerelease_node_exclude_patterns_json }}
         run: |
-          plugin_prerelease_node_exclusions="$(jq -c . <<< "$PLUGIN_PRERELEASE_NODE_EXCLUDE_PATTERNS_JSON")"
           {
             echo "## Full release validation"
             echo
@@ -454,7 +447,6 @@ jobs:
             fi
             if [[ "$RERUN_GROUP" == "all" || "$RERUN_GROUP" == "plugin-prerelease" ]]; then
               echo "- Plugin prerelease: \`Plugin Prerelease\` with \`target_ref=${TARGET_SHA}\`"
-              echo "- Plugin prerelease Node exclusions: \`${plugin_prerelease_node_exclusions}\`"
             else
               echo "- Plugin prerelease: skipped by rerun group"
             fi
@@ -551,7 +543,6 @@ jobs:
           NPM_TELEGRAM_SCENARIO: ${{ inputs.npm_telegram_scenario }}
           SKIP_PACKAGE_TELEGRAM_E2E: ${{ inputs.skip_package_telegram_e2e }}
           ALLOW_UNRELEASED_CHANGELOG: ${{ inputs.allow_unreleased_changelog || (inputs.target_context_ref == '' && (inputs.ref == 'main' || inputs.ref == 'refs/heads/main')) }}
-          PLUGIN_PRERELEASE_NODE_EXCLUDE_PATTERNS_JSON: ${{ inputs.plugin_prerelease_node_exclude_patterns_json }}
           TRUSTED_WORKFLOW_JSON: ${{ needs.resolve_target.outputs.trusted_workflow_json }}
         run: |
           set -euo pipefail
@@ -571,7 +562,6 @@ jobs:
             --arg npmTelegramScenario "$NPM_TELEGRAM_SCENARIO" \
             --arg skipPackageTelegramE2e "$SKIP_PACKAGE_TELEGRAM_E2E" \
             --arg allowUnreleasedChangelog "$ALLOW_UNRELEASED_CHANGELOG" \
-            --arg pluginPrereleaseNodeExcludePatternsJson "$PLUGIN_PRERELEASE_NODE_EXCLUDE_PATTERNS_JSON" \
             '{
               provider: $provider,
               mode: $mode,
@@ -585,8 +575,7 @@ jobs:
               npmTelegramProviderMode: $npmTelegramProviderMode,
               npmTelegramScenario: $npmTelegramScenario,
               skipPackageTelegramE2e: $skipPackageTelegramE2e,
-              allowUnreleasedChangelog: $allowUnreleasedChangelog,
-              pluginPrereleaseNodeExcludePatternsJson: $pluginPrereleaseNodeExcludePatternsJson
+              allowUnreleasedChangelog: $allowUnreleasedChangelog
             }')"
           trusted_workflow_json="${TRUSTED_WORKFLOW_JSON}"
           trusted_workflow_ref="$(jq -er '.ref | select(type == "string" and length > 0)' <<< "$trusted_workflow_json")"
@@ -883,23 +872,16 @@ jobs:
                   exit 2
                   ;;
               esac
-              plugin_prerelease_node_exclusions="$(
-                jq -c . <<< "$PLUGIN_PRERELEASE_NODE_EXCLUDE_PATTERNS_JSON"
-              )"
               {
                 echo "### Plugin prerelease"
                 echo
                 echo "- Target ref: \`${TARGET_REF}\`"
                 echo "- Target SHA: \`${TARGET_SHA}\`"
                 echo "- Phase: \`${PHASE}\`"
-                echo "- Frozen-target Node test omissions: \`${plugin_prerelease_node_exclusions}\`"
               } >> "$GITHUB_STEP_SUMMARY"
               dispatch_id="full-release-validation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plugin-prerelease-${PHASE}"
               dispatch_run_name="Plugin Prerelease ${dispatch_id}"
-              args=(-f target_ref="$TARGET_SHA" -f expected_sha="$TARGET_SHA" -f full_release_validation=true -f phase="$PHASE" -f dispatch_id="$dispatch_id" -f node_test_exclude_patterns_json="$PLUGIN_PRERELEASE_NODE_EXCLUDE_PATTERNS_JSON")
-              if [[ -n "${TARGET_CONTEXT_REF:-}" ]]; then
-                args+=(-f target_context_ref="$TARGET_CONTEXT_REF")
-              fi
+              args=(-f target_ref="$TARGET_SHA" -f expected_sha="$TARGET_SHA" -f full_release_validation=true -f phase="$PHASE" -f dispatch_id="$dispatch_id")
               if [[ -n "${CANDIDATE_ARTIFACT_JSON// }" ]]; then
                 args+=(-f candidate_artifact_json="$CANDIDATE_ARTIFACT_JSON")
               fi
@@ -1054,7 +1036,6 @@ jobs:
           CHILD_WORKFLOW_REF: ${{ github.ref_name }}
           PARENT_WORKFLOW_SHA: ${{ github.sha }}
           CANDIDATE_ARTIFACT_JSON: ""
-          PLUGIN_PRERELEASE_NODE_EXCLUDE_PATTERNS_JSON: ${{ inputs.plugin_prerelease_node_exclude_patterns_json }}
         run: *full_release_child_dispatch
 
   plugin_prerelease_candidate:
@@ -1079,7 +1060,6 @@ jobs:
           CHILD_WORKFLOW_REF: ${{ github.ref_name }}
           PARENT_WORKFLOW_SHA: ${{ github.sha }}
           CANDIDATE_ARTIFACT_JSON: ${{ needs.candidate_acquisition.outputs.candidate_artifact_json }}
-          PLUGIN_PRERELEASE_NODE_EXCLUDE_PATTERNS_JSON: ${{ inputs.plugin_prerelease_node_exclude_patterns_json }}
         run: *full_release_child_dispatch
 
   release_checks_independent:
@@ -1798,7 +1778,6 @@ jobs:
           NPM_TELEGRAM_SCENARIO: ${{ inputs.npm_telegram_scenario }}
           SKIP_PACKAGE_TELEGRAM_E2E: ${{ inputs.skip_package_telegram_e2e }}
           ALLOW_UNRELEASED_CHANGELOG: ${{ inputs.allow_unreleased_changelog || (inputs.target_context_ref == '' && (inputs.ref == 'main' || inputs.ref == 'refs/heads/main')) }}
-          PLUGIN_PRERELEASE_NODE_EXCLUDE_PATTERNS_JSON: ${{ inputs.plugin_prerelease_node_exclude_patterns_json }}
           RELEASE_EXECUTION_PLAN_PATH: ${{ runner.temp }}/full-release-execution-plan/full-release-execution-plan.json
           DIAGNOSTIC_DRAIN_PATH: ${{ runner.temp }}/full-release-diagnostics/full-release-diagnostic-manifest.json
         run: |
@@ -1938,7 +1917,6 @@ jobs:
             --arg npmTelegramScenario "$NPM_TELEGRAM_SCENARIO" \
             --arg skipPackageTelegramE2e "$SKIP_PACKAGE_TELEGRAM_E2E" \
             --arg allowUnreleasedChangelog "$ALLOW_UNRELEASED_CHANGELOG" \
-            --arg pluginPrereleaseNodeExcludePatternsJson "$PLUGIN_PRERELEASE_NODE_EXCLUDE_PATTERNS_JSON" \
             --argjson childEvidence "$CHILD_EVIDENCE" \
             '{
               version: 4,
@@ -1971,8 +1949,7 @@ jobs:
                 npmTelegramProviderMode: $npmTelegramProviderMode,
                 npmTelegramScenario: $npmTelegramScenario,
                 skipPackageTelegramE2e: $skipPackageTelegramE2e,
-                allowUnreleasedChangelog: $allowUnreleasedChangelog,
-                pluginPrereleaseNodeExcludePatternsJson: $pluginPrereleaseNodeExcludePatternsJson
+                allowUnreleasedChangelog: $allowUnreleasedChangelog
               },
               controls: {
                 stableSoakRequired: ($releaseProfile == "stable" or $releaseProfile == "full"),

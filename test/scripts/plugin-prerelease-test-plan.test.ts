@@ -50,35 +50,6 @@ function getDockerLane(name: string) {
   return lane;
 }
 
-function runFrozenTargetNodeExclusionValidation(params: {
-  fullReleaseValidation: boolean;
-  patternsJson: string;
-}) {
-  const workflow = readPluginPrereleaseWorkflow();
-  const validationStep = workflow.jobs.preflight.steps.find(
-    (step: WorkflowStep) => step.name === "Validate frozen-target Node exclusions",
-  );
-  if (!validationStep?.run) {
-    throw new Error("Missing frozen-target Node exclusion validation step");
-  }
-
-  const root = tempDirs.make("openclaw-plugin-prerelease-excludes-");
-  const outputPath = join(root, "github-output");
-  const result = spawnSync("bash", ["-c", validationStep.run], {
-    encoding: "utf8",
-    env: {
-      FULL_RELEASE_VALIDATION: String(params.fullReleaseValidation),
-      GITHUB_OUTPUT: outputPath,
-      NODE_TEST_EXCLUDE_PATTERNS_JSON: params.patternsJson,
-      PATH: process.env.PATH,
-    },
-  });
-  return {
-    ...result,
-    output: existsSync(outputPath) ? readFileSync(outputPath, "utf8") : "",
-  };
-}
-
 function pluginCandidateArtifactJson(selectedSha = "a".repeat(40)) {
   return JSON.stringify({
     packageArtifactName: "docker-e2e-package-123-1",
@@ -181,6 +152,7 @@ function runPluginSummary(params: {
       RUN_EXTENSIONS: String(params.runExtensions),
       RUN_NODE: String(params.runNode),
       RUN_STATIC: String(params.runStatic),
+      SECURITY_RESULT: "success",
       STATIC_RESULT: params.static,
     },
   });
@@ -391,195 +363,38 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     expect(fixtureServer).toContain("/versions/${fixture.version}/artifact");
   });
 
-  it("validates frozen-target Node omissions as exact full-release-only plugin test paths", () => {
-    const defaultResult = runFrozenTargetNodeExclusionValidation({
-      fullReleaseValidation: false,
-      patternsJson: "[]",
+  it("keeps the trusted security scanner outside the candidate test process", () => {
+    const workflow = readPluginPrereleaseWorkflow();
+    const securityPlan = workflow.jobs["plugin-npm-security-plan"];
+    const securityPackage = workflow.jobs["plugin-npm-security-package"];
+    const securityScan = workflow.jobs["plugin-npm-security-scan"];
+    const source = readFileSync(".github/workflows/plugin-prerelease.yml", "utf8");
+
+    expect(securityPlan.needs).toEqual(["preflight"]);
+    expect(securityPackage.needs).toEqual(["preflight", "plugin-npm-security-plan"]);
+    expect(securityScan).toMatchObject({
+      name: "plugin-npm-security-scan",
+      needs: ["preflight", "plugin-npm-security-plan", "plugin-npm-security-package"],
+      permissions: { actions: "read", contents: "read" },
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 20,
     });
-    expect(defaultResult.status, defaultResult.stderr).toBe(0);
-    expect(defaultResult.output).toBe("patterns_json=[]\n");
-
-    const validPatterns = [
-      "src/plugins/example.test.ts",
-      "src/plugins/runtime/example.runtime.test.ts",
-    ];
-    const fullReleaseResult = runFrozenTargetNodeExclusionValidation({
-      fullReleaseValidation: true,
-      patternsJson: JSON.stringify(validPatterns),
-    });
-    expect(fullReleaseResult.status, fullReleaseResult.stderr).toBe(0);
-    expect(fullReleaseResult.output).toBe(`patterns_json=${JSON.stringify(validPatterns)}\n`);
-
-    for (const patternsJson of ["", "{}", "null", '"src/plugins/example.test.ts"']) {
-      const result = runFrozenTargetNodeExclusionValidation({
-        fullReleaseValidation: true,
-        patternsJson,
-      });
-      expect(result.status, `${patternsJson}\n${result.stderr}`).not.toBe(0);
-    }
-
-    for (const patternsJson of [JSON.stringify(["src/plugins/example.test.ts"]), " [ ] "]) {
-      const result = runFrozenTargetNodeExclusionValidation({
-        fullReleaseValidation: false,
-        patternsJson,
-      });
-      expect(result.status, `${patternsJson}\n${result.stderr}`).not.toBe(0);
-    }
-
-    for (const patternsJson of [
-      JSON.stringify([""]),
-      JSON.stringify([42]),
-      JSON.stringify(["/src/plugins/example.test.ts"]),
-      JSON.stringify(["C:\\src\\plugins\\example.test.ts"]),
-      JSON.stringify(["../src/plugins/example.test.ts"]),
-      JSON.stringify(["./src/plugins/example.test.ts"]),
-      JSON.stringify(["src/plugins/../example.test.ts"]),
-      JSON.stringify(["src/plugins//example.test.ts"]),
-      JSON.stringify(["src/agents/example.test.ts"]),
-      JSON.stringify(["src/plugins/example.ts"]),
-      JSON.stringify(["src/plugins/*.test.ts"]),
-      JSON.stringify(["src/plugins/example?.test.ts"]),
-      JSON.stringify(["src/plugins/[example].test.ts"]),
-      JSON.stringify(["src/plugins/example.test.ts", "src/plugins/example.test.ts"]),
-    ]) {
-      const result = runFrozenTargetNodeExclusionValidation({
-        fullReleaseValidation: true,
-        patternsJson,
-      });
-      expect(result.status, `${patternsJson}\n${result.stderr}`).not.toBe(0);
-    }
-  });
-
-  it("keeps frozen-target fixture ownership and Node omissions explicit in release evidence", () => {
-    const pluginWorkflow = readPluginPrereleaseWorkflow();
-    const pluginSource = readFileSync(".github/workflows/plugin-prerelease.yml", "utf8");
-    const preflight = pluginWorkflow.jobs.preflight;
-    const nodeShard = pluginWorkflow.jobs["plugin-prerelease-node-shard"];
-    const trustedCheckout = nodeShard.steps.find(
-      (step: WorkflowStep) => step.name === "Checkout trusted npm security inventory",
-    );
-    const installInventory = nodeShard.steps.find(
-      (step: WorkflowStep) => step.name === "Install trusted npm security inventory",
-    );
-    const runNodeShard = nodeShard.steps.find(
-      (step: WorkflowStep) => step.name === "Run release-only plugin Node shard",
-    );
-    const releaseWorkflow = readFullReleaseValidationWorkflow();
-    const releaseSource = readFileSync(".github/workflows/full-release-validation.yml", "utf8");
-    const targetSummary = releaseWorkflow.jobs.resolve_target.steps.find(
-      (step: WorkflowStep) => step.name === "Summarize target",
-    );
-    const pluginDispatch = releaseWorkflow.jobs.plugin_prerelease_candidate.steps.find(
-      (step: WorkflowStep) => step.name === "Dispatch plugin prerelease candidate phase",
-    );
-    const evidenceReuse = releaseWorkflow.jobs.evidence_reuse.steps.find(
-      (step: WorkflowStep) => step.name === "Find reusable validation evidence",
-    );
-    const manifest = releaseWorkflow.jobs.summary.steps.find(
-      (step: WorkflowStep) => step.name === "Write release validation manifest",
-    );
-
-    expect(pluginWorkflow.on.workflow_dispatch.inputs.node_test_exclude_patterns_json).toEqual({
-      default: "[]",
-      description:
-        "Full Release Validation-only exact plugin test paths omitted for a frozen target",
-      required: false,
-      type: "string",
-    });
-    expect(pluginWorkflow.on.workflow_dispatch.inputs.target_context_ref).toEqual({
-      default: "",
-      description: "Canonical release context for an exact-SHA frozen-target validation",
-      required: false,
-      type: "string",
-    });
-    expect(preflight.outputs.node_test_exclude_patterns_json).toBe(
-      "${{ steps.node_test_exclusions.outputs.patterns_json }}",
-    );
-    expect(trustedCheckout).toMatchObject({
-      if: "inputs.full_release_validation",
-      uses: CHECKOUT_V6,
-      with: {
-        "persist-credentials": false,
-        ref: "${{ github.sha }}",
-        path: ".plugin-prerelease-trusted",
-        "sparse-checkout-cone-mode": false,
-      },
-    });
-    expect(trustedCheckout.with?.["sparse-checkout"]).toBe(
-      [
-        "src/plugins/npm-install-security-scan.release.test.ts",
-        "scripts/lib/npm-json-output.mts",
-        "",
-      ].join("\n"),
-    );
-    expect(installInventory?.run).toContain(
-      [
-        "install -m 0644 \\",
-        '  "$trusted_checkout/src/plugins/npm-install-security-scan.release.test.ts" \\',
-        "  src/plugins/npm-install-security-scan.release.test.ts",
-      ].join("\n"),
-    );
-    expect(installInventory?.run).toContain(
-      [
-        "install -m 0644 \\",
-        '  "$trusted_checkout/scripts/lib/npm-json-output.mts" \\',
-        "  scripts/lib/npm-json-output.mts",
-      ].join("\n"),
-    );
-    expect(installInventory?.run).toContain('rm -rf -- "$trusted_checkout"');
-    expect(runNodeShard?.env?.NODE_TEST_EXCLUDE_PATTERNS_JSON).toBe(
-      "${{ needs.preflight.outputs.node_test_exclude_patterns_json }}",
-    );
-    expect(runNodeShard?.env?.OPENCLAW_RELEASE_TARGET_CONTEXT_REF).toBe(
-      "${{ inputs.target_context_ref }}",
-    );
-    expect(runNodeShard?.run).toContain('process.env.NODE_TEST_EXCLUDE_PATTERNS_JSON ?? "[]"');
-    expect(runNodeShard?.run).toContain('pattern.slice("src/plugins/".length)');
-    expect(runNodeShard?.run).toContain("`--exclude=${pattern.slice");
-    expect(runNodeShard?.run).toContain('["test", "--", ...configs, "--", ...excludeArgs]');
-    expect(pluginSource).not.toContain("runtime-llm.runtime.test.ts");
-
     expect(
-      releaseWorkflow.on.workflow_dispatch.inputs.plugin_prerelease_node_exclude_patterns_json,
-    ).toEqual({
-      default: "[]",
-      description:
-        "Exact Plugin Prerelease Node test paths omitted only for frozen-target validation",
-      required: false,
-      type: "string",
-    });
-    expect(targetSummary?.env?.PLUGIN_PRERELEASE_NODE_EXCLUDE_PATTERNS_JSON).toBe(
-      "${{ inputs.plugin_prerelease_node_exclude_patterns_json }}",
-    );
-    expect(targetSummary?.run).toContain("- Plugin prerelease Node exclusions:");
-    expect(pluginDispatch?.env?.PLUGIN_PRERELEASE_NODE_EXCLUDE_PATTERNS_JSON).toBe(
-      "${{ inputs.plugin_prerelease_node_exclude_patterns_json }}",
-    );
-    expect(pluginDispatch?.run).toContain(
-      '-f node_test_exclude_patterns_json="$PLUGIN_PRERELEASE_NODE_EXCLUDE_PATTERNS_JSON"',
-    );
-    expect(pluginDispatch?.run).toContain('args+=(-f target_context_ref="$TARGET_CONTEXT_REF")');
-    expect(pluginDispatch?.run).toContain("- Frozen-target Node test omissions:");
-    expect(evidenceReuse?.env?.PLUGIN_PRERELEASE_NODE_EXCLUDE_PATTERNS_JSON).toBe(
-      "${{ inputs.plugin_prerelease_node_exclude_patterns_json }}",
-    );
-    expect(evidenceReuse?.run).toContain(
-      "pluginPrereleaseNodeExcludePatternsJson: $pluginPrereleaseNodeExcludePatternsJson",
-    );
-    expect(manifest?.env?.PLUGIN_PRERELEASE_NODE_EXCLUDE_PATTERNS_JSON).toBe(
-      "${{ inputs.plugin_prerelease_node_exclude_patterns_json }}",
-    );
-    expect(manifest?.run).toContain(
-      "pluginPrereleaseNodeExcludePatternsJson: $pluginPrereleaseNodeExcludePatternsJson",
-    );
-    expect(releaseSource).not.toContain("runtime-llm.runtime.test.ts");
+      securityScan.steps.find(
+        (step: WorkflowStep) => step.name === "Scan supplemental inert plugin inputs",
+      )?.run,
+    ).toContain("node scripts/plugin-npm-security-scan-runner.mjs");
+    expect(source).not.toContain("npm-install-security-scan.release.test.ts");
+    expect(source).not.toContain("node_test_exclude_patterns_json");
   });
+
 
   it("wires the full plugin prerelease plan into its release workflow", () => {
     const workflow = readCiWorkflow();
     const preflight = workflow.jobs.preflight;
     const pluginWorkflow = readPluginPrereleaseWorkflow();
     const pluginPreflight = pluginWorkflow.jobs.preflight;
+    const securityScan = pluginWorkflow.jobs["plugin-npm-security-scan"];
     const staticShard = pluginWorkflow.jobs["plugin-prerelease-static-shard"];
     const nodeShard = pluginWorkflow.jobs["plugin-prerelease-node-shard"];
     const extensionShard = pluginWorkflow.jobs["plugin-prerelease-extension-shard"];
@@ -801,9 +616,7 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     const pluginNodeShardScript = pluginWorkflow.jobs["plugin-prerelease-node-shard"].steps.find(
       (step: WorkflowStep) => step.name === "Run release-only plugin Node shard",
     ).run;
-    expect(pluginNodeShardScript).toContain(
-      'spawnSync("pnpm", ["test", "--", ...configs, "--", ...excludeArgs]',
-    );
+    expect(pluginNodeShardScript).toContain('spawnSync("pnpm", ["test", "--", ...configs]');
     expect(pluginNodeShardScript).not.toContain("scripts/test-projects.mts");
     expect(pluginWorkflow.on.workflow_dispatch.inputs.target_ref).toEqual({
       default: "main",
@@ -850,7 +663,6 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
       plugin_prerelease_extension_matrix:
         "${{ steps.manifest.outputs.plugin_prerelease_extension_matrix }}",
       plugin_prerelease_node_matrix: "${{ steps.manifest.outputs.plugin_prerelease_node_matrix }}",
-      node_test_exclude_patterns_json: "${{ steps.node_test_exclusions.outputs.patterns_json }}",
       plugin_prerelease_static_matrix:
         "${{ steps.manifest.outputs.plugin_prerelease_static_matrix }}",
       run_plugin_prerelease_docker: "${{ steps.manifest.outputs.run_plugin_prerelease_docker }}",
@@ -865,6 +677,11 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     expect(staticShard.strategy.matrix).toBe(
       "${{ fromJson(needs.preflight.outputs.plugin_prerelease_static_matrix) }}",
     );
+    expect(securityScan.needs).toEqual([
+      "preflight",
+      "plugin-npm-security-plan",
+      "plugin-npm-security-package",
+    ]);
     expect(nodeShard.strategy.matrix).toBe(
       "${{ fromJson(needs.preflight.outputs.plugin_prerelease_node_matrix) }}",
     );
@@ -965,6 +782,7 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     expect(dockerSuite.secrets).toBeUndefined();
     expect(suite.needs).toEqual([
       "preflight",
+      "plugin-npm-security-scan",
       "plugin-prerelease-static-shard",
       "plugin-prerelease-node-shard",
       "plugin-prerelease-extension-shard",
@@ -974,6 +792,9 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     expect(
       suite.steps.find((step: WorkflowStep) => step.name === "Verify plugin prerelease suite").run,
     ).toContain("plugin-prerelease-inspector advisory result");
+    expect(
+      suite.steps.find((step: WorkflowStep) => step.name === "Verify plugin prerelease suite").run,
+    ).toContain('check_required "plugin-npm-security-scan" "true" "$SECURITY_RESULT"');
   });
 
   it.each([

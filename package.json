@@ -2127,6 +2127,7 @@
     "@lit/context": "1.1.6",
     "@lit/task": "1.0.3",
     "@mdx-js/mdx": "3.1.1",
+    "@npmcli/arborist": "9.8.0",
     "@openclaw/session-url-contract": "workspace:*",
     "@opentelemetry/sdk-node": "0.221.0",
     "@shikijs/core": "4.4.3",
@@ -2152,6 +2153,7 @@
     "lit-analyzer": "2.0.3",
     "markdown-it": "15.0.0",
     "marked": "18.0.10",
+    "npm-packlist": "10.0.4",
     "oxfmt": "0.60.0",
     "oxlint": "1.79.0",
     "oxlint-tsgolint": "7.0.2001",
@@ -2168,6 +2170,7 @@
     "tsx": "4.23.12",
     "unrun": "0.3.1",
     "vite": "8.2.2",
+    "validate-npm-package-name": "7.0.2",
     "vitest": "4.1.11"
   },
   "optionalDependencies": {
