@@ -24,6 +24,7 @@ function isTerminalPayload(payload: ReplyPayload): boolean {
     payload.isCommentary === true ||
     payload.isReasoningSnapshot === true ||
     isReplyPayloadStatusNotice(payload) ||
+    // SAFETY: ReplyPayload is the canonical payload shape; older results may add visibility.
     (payload as ReplyPayload & { visible?: unknown }).visible === false
   ) {
     return false;
@@ -40,6 +41,7 @@ function isTerminalPayload(payload: ReplyPayload): boolean {
 
 /** Return model-visible result text without leaking historical error payloads. */
 export function resolveOpenAiHttpResultText(result: unknown): string {
+  // SAFETY: callers pass agent results or nullish terminal outcomes through this shared projector.
   const payloads = (result as OpenAiHttpAgentResult | null | undefined)?.payloads;
   return Array.isArray(payloads)
     ? payloads
@@ -55,6 +57,7 @@ export function resolveOpenAiHttpAgentRunTerminalOutcome(
   result: unknown,
   previous?: AgentRunTerminalOutcome,
 ): AgentRunTerminalOutcome {
+  // SAFETY: callers pass agent results or nullish terminal outcomes through this shared projector.
   const agentResult = result as OpenAiHttpAgentResult | null | undefined;
   const meta = agentResult?.meta;
   // Completed tool calls can intentionally make a successful turn unsafe to

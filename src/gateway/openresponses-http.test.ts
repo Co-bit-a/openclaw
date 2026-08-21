@@ -2301,7 +2301,7 @@ describe("OpenResponses HTTP API (e2e)", () => {
       input: Array.from({ length: 5 }, (_, index) => ({
         type: "function_call_output" as const,
         call_id: `call_aggregate_${index}`,
-        output: "界".repeat(perOutputChars),
+        output: "x".repeat(perOutputChars),
       })),
     });
 
