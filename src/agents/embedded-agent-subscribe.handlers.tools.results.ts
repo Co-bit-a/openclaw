@@ -499,6 +499,7 @@ function queuePendingToolMedia(
 
 function readExecApprovalPendingDetails(result: unknown): {
   approvalId: string;
+  instanceId?: string;
   approvalSlug: string;
   expiresAtMs?: number;
   allowedDecisions?: readonly ExecApprovalDecision[];
@@ -528,6 +529,7 @@ function readExecApprovalPendingDetails(result: unknown): {
   }
   return {
     approvalId,
+    instanceId: readStringValue(details.instanceId),
     approvalSlug,
     expiresAtMs: typeof details.expiresAtMs === "number" ? details.expiresAtMs : undefined,
     allowedDecisions: Array.isArray(details.allowedDecisions)
@@ -631,6 +633,7 @@ export async function emitToolResultOutput(params: {
       await ctx.params.onToolResult(
         buildTypedExecApprovalPendingReplyPayload({
           approvalId: approvalPending.approvalId,
+          instanceId: approvalPending.instanceId,
           approvalSlug: approvalPending.approvalSlug,
           allowedDecisions: approvalPending.allowedDecisions,
           command: approvalPending.command,

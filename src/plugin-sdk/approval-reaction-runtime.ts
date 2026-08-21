@@ -69,6 +69,7 @@ export type ApprovalReactionDecisionResolution = {
 /** Stored target metadata needed to convert a reaction into an approval decision. */
 export type ApprovalReactionTargetRecord<TRoute = unknown> = {
   approvalId: string;
+  instanceId?: string;
   /** Explicit ownership; omission is supported only by the deprecated resolver. */
   approvalKind?: ChannelApprovalKind;
   allowedDecisions: readonly ExecApprovalReplyDecision[];

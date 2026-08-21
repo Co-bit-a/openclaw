@@ -48,6 +48,7 @@ const DEFAULT_REACTION_TARGET_TTL_MS = 24 * 60 * 60 * 1000;
 
 type IMessageApprovalReactionResolution = {
   approvalId: string;
+  instanceId?: string;
   approvalKind: ChannelApprovalKind;
   decision: ExecApprovalReplyDecision;
 };
@@ -213,6 +214,7 @@ export function addIMessageApprovalReactionHintToStructuredPayload(params: {
       ...params.payload.channelData,
       [IMESSAGE_APPROVAL_DELIVERY_BINDING_KEY]: buildApprovalReactionDeliveredBindingMarker({
         approvalId: metadata.approvalId,
+        instanceId: metadata.instanceId,
         approvalSlug: metadata.approvalSlug,
         approvalKind: metadata.approvalKind,
         allowedDecisions: metadata.allowedDecisions,
@@ -228,6 +230,7 @@ export function registerIMessageApprovalReactionTarget(params: {
   conversation: IMessageApprovalConversationKey;
   messageId: string;
   approvalId: string;
+  instanceId?: string;
   approvalKind: ChannelApprovalKind;
   allowedDecisions: readonly ExecApprovalReplyDecision[];
   ttlMs?: number;
@@ -247,7 +250,12 @@ export function registerIMessageApprovalReactionTarget(params: {
   ) {
     return null;
   }
-  const target = { approvalId, approvalKind: params.approvalKind, allowedDecisions };
+  const target = {
+    approvalId,
+    ...(params.instanceId ? { instanceId: params.instanceId } : {}),
+    approvalKind: params.approvalKind,
+    allowedDecisions,
+  };
   // Register the binding under every key we can derive from the conversation
   // (chat_guid / chat_identifier / chat_id / handle). Inbound lookup precedence
   // can differ from outbound — e.g. send only sees `{handle: "+1..."}` for a
@@ -354,6 +362,7 @@ export function registerIMessageApprovalReactionTargetForDeliveredPayload(params
           conversation,
           messageId,
           approvalId: binding.approvalId,
+          instanceId: binding.instanceId,
           approvalKind: binding.approvalKind,
           allowedDecisions: binding.allowedDecisions,
           ttlMs: params.ttlMs,
@@ -540,6 +549,7 @@ export async function handleIMessageApprovalReaction(params: {
     const result = await resolveApprovalOverGateway({
       cfg: params.cfg,
       approvalId: target.approvalId,
+      instanceId: target.instanceId,
       approvalKind: target.approvalKind,
       decision: target.decision,
       channel: "imessage",
