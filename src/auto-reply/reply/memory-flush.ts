@@ -95,7 +95,12 @@ export function resolveResponsesServerCompactionThreshold(params: {
         baseUrl: configuredModel?.baseUrl ?? providerConfig?.baseUrl,
         contextWindow:
           configuredModel?.contextWindow ??
-          resolveMemoryFlushContextWindowTokens({ cfg: params.cfg, provider, modelId }),
+          resolveMemoryFlushContextWindowTokens({
+            cfg: params.cfg,
+            provider,
+            modelId,
+            agentId: params.agentId,
+          }),
       },
       extraParams,
     ).threshold;
@@ -106,6 +111,7 @@ export function resolveResponsesServerCompactionThreshold(params: {
     cfg: params.cfg,
     provider,
     modelId,
+    agentId: params.agentId,
   });
   return resolveOpenAIResponsesServerCompactionPlan(
     {
