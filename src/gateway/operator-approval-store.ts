@@ -466,7 +466,11 @@ function decodeOperatorApprovalRow(row: OperatorApprovalRow): OperatorApprovalRe
   if (
     presentation.kind !== kind ||
     row.resolution_ref !==
-      buildApprovalResolutionRef({ approvalId: row.approval_id, approvalKind: kind }) ||
+      buildApprovalResolutionRef({
+        approvalId: row.approval_id,
+        approvalKind: kind,
+        instanceId: presentation.instanceId,
+      }) ||
     !hasValidLifecycleTuple({ row, status, decision, terminalReason, resolverKind }) ||
     (status === "allowed" &&
       (!decision || !Array.prototype.includes.call(presentation.allowedDecisions, decision)))
