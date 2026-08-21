@@ -20,7 +20,7 @@ struct WatchInboxView: View {
     var store: WatchInboxStore
     var directNode: WatchDirectNode
     var onAction: ((WatchPromptAction) -> Void)?
-    var onExecApprovalDecision: ((String, String?, WatchExecApprovalDecision) -> Void)?
+    var onExecApprovalDecision: ((String, String?, String?, WatchExecApprovalDecision) -> Void)?
     var onRefreshExecApprovalReview: (() -> Void)?
     var onRefreshAppSnapshot: (() -> Void)?
     var onAppCommand: ((WatchAppCommand) -> Void)?
@@ -46,7 +46,7 @@ private struct WatchControlSurfaceView: View {
     var store: WatchInboxStore
     var directNode: WatchDirectNode
     var onAction: ((WatchPromptAction) -> Void)?
-    var onExecApprovalDecision: ((String, String?, WatchExecApprovalDecision) -> Void)?
+    var onExecApprovalDecision: ((String, String?, String?, WatchExecApprovalDecision) -> Void)?
     var onRefreshExecApprovalReview: (() -> Void)?
     var onRefreshAppSnapshot: (() -> Void)?
     var onAppCommand: ((WatchAppCommand) -> Void)?
