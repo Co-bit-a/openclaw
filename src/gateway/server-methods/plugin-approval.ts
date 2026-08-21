@@ -313,11 +313,12 @@ export function createPluginApprovalHandlers(
       if (!resolveParams) {
         return;
       }
-      const { inputId, decision, reviewer } = resolveParams;
+      const { inputId, instanceId, decision, reviewer } = resolveParams;
       await handleApprovalResolve({
         approvalKind: "plugin",
         manager,
         inputId,
+        instanceId,
         decision,
         respond,
         context,

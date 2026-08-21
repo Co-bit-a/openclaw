@@ -8,7 +8,7 @@ import {
 } from "./overlays-access.test-support.ts";
 import { createApplicationOverlays } from "./overlays.ts";
 
-function approvalRace(id: string, replacementCreatedAtMs: number) {
+function approvalRace(id: string, replacementInstanceId: string) {
   const resolveAttempt = deferred();
   const request = vi.fn<RequestFn>((method) =>
     method.endsWith(".list") ? Promise.resolve([]) : resolveAttempt.promise,
@@ -18,7 +18,7 @@ function approvalRace(id: string, replacementCreatedAtMs: number) {
   harness.emitApproval(id, 1_000);
   const original = overlays.snapshot.approvalQueue[0];
   const decision = overlays.decideApproval("allow-once");
-  harness.emitApproval(id, replacementCreatedAtMs);
+  harness.emitApproval(id, 1_000, replacementInstanceId);
   return { decision, original, overlays, request, resolveAttempt };
 }
 
@@ -27,7 +27,7 @@ describe("application approval replacement races", () => {
     it(`keeps a refreshed approval owned by its pending decision after ${outcome}`, async () => {
       const { decision, original, overlays, resolveAttempt } = approvalRace(
         "approval-refreshed",
-        1_000,
+        "approval-refreshed:1000",
       );
 
       expect(overlays.snapshot.approvalQueue[0]).not.toBe(original);
@@ -69,7 +69,7 @@ describe("application approval replacement races", () => {
     async ({ error, stale }) => {
       const { decision, overlays, request, resolveAttempt } = approvalRace(
         "approval-reused",
-        2_000,
+        "replacement-instance",
       );
       const listRequestCount = request.mock.calls.filter(([method]) =>
         method.endsWith(".list"),
@@ -83,7 +83,7 @@ describe("application approval replacement races", () => {
       await decision;
 
       expect(overlays.snapshot.approvalQueue).toEqual([
-        expect.objectContaining({ createdAtMs: 2_000, id: "approval-reused" }),
+        expect.objectContaining({ instanceId: "replacement-instance", id: "approval-reused" }),
       ]);
       expect(overlays.snapshot.approvalErrors).toEqual(new Map());
       if (stale) {

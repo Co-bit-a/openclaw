@@ -25,6 +25,8 @@ export type ExecApprovalDecision = "allow-once" | "allow-always" | "deny";
 
 export type ExecApprovalRequest = {
   id: string;
+  /** Gateway-owned lifecycle identity. Older event producers omit it. */
+  instanceId?: string;
   kind: "exec" | "plugin" | "system-agent";
   request: ExecApprovalRequestPayload;
   pluginTitle?: string;
@@ -173,6 +175,7 @@ function parseExecApprovalRequested(payload: unknown): ExecApprovalRequest | nul
   }
   return {
     id,
+    instanceId: normalizeOptionalString(payload.instanceId) ?? undefined,
     kind: "exec",
     request: {
       command,
@@ -242,6 +245,7 @@ function parsePluginApprovalRequested(payload: unknown): ExecApprovalRequest | n
 
   return {
     id,
+    instanceId: normalizeOptionalString(payload.instanceId) ?? undefined,
     kind: "plugin",
     request: {
       command: title,
@@ -275,6 +279,7 @@ function parseSystemAgentApprovalRequested(payload: unknown): ExecApprovalReques
   }
   return {
     id,
+    instanceId: normalizeOptionalString(payload.instanceId) ?? undefined,
     kind: "system-agent",
     request: {
       command,
@@ -313,13 +318,18 @@ export async function resolveApprovalRequest(
   if (approval.kind === "system-agent") {
     await client.request("approval.resolve", {
       id: approval.id,
+      ...(approval.instanceId ? { instanceId: approval.instanceId } : {}),
       kind: "system-agent",
       decision,
     });
     return;
   }
   const method = approval.kind === "plugin" ? "plugin.approval.resolve" : "exec.approval.resolve";
-  await client.request(method, { id: approval.id, decision });
+  await client.request(method, {
+    id: approval.id,
+    ...(approval.instanceId ? { instanceId: approval.instanceId } : {}),
+    decision,
+  });
 }
 
 function pruneExecApprovalQueue(queue: ExecApprovalRequest[]): ExecApprovalRequest[] {

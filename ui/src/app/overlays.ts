@@ -616,14 +616,16 @@ export function createApplicationOverlays(
         operation.grantGeneration === approvalGrantGeneration &&
         readGatewayOperatorAccess(gateway.snapshot).canGrantApprovals &&
         isCurrentClient(operation.client);
-      // A refresh can reconstruct the same approval, while a reused id
-      // with a different creation time denotes a new protected request.
+      // The Gateway owns this lifecycle token. Approval ids are reusable, so
+      // an older decision must never settle or annotate a replacement record.
       const isCurrentApproval = () =>
         promptState.execApprovalQueue.some(
           (entry) =>
             entry.id === active.id &&
             entry.kind === active.kind &&
-            entry.createdAtMs === active.createdAtMs,
+            (active.instanceId
+              ? entry.instanceId === active.instanceId
+              : !entry.instanceId && entry.createdAtMs === active.createdAtMs),
         );
       publish();
       try {

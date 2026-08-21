@@ -86,6 +86,7 @@ type ExecApprovalResolutionSource = "operator" | "auto-review";
 
 export type ExecApprovalRecord<TPayload = ExecApprovalRequestPayload> = {
   id: string;
+  instanceId: string;
   request: TPayload;
   createdAtMs: number;
   expiresAtMs: number;
@@ -275,6 +276,7 @@ export class ExecApprovalManager<TPayload = ExecApprovalRequestPayload> {
     const resolvedId = hasExplicitId ? id : randomUUID();
     const record: ExecApprovalRecord<TPayload> = {
       id: resolvedId,
+      instanceId: randomUUID(),
       request,
       createdAtMs: now,
       expiresAtMs,

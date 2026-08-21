@@ -438,7 +438,7 @@ export function createApprovalHandlers(
           ? params.execApprovalManager.getLiveSnapshot(record.id)
           : record.kind === "plugin"
             ? params.pluginApprovalManager.getLiveSnapshot(record.id)
-            : undefined;
+            : params.systemAgentApprovalManager?.getLiveSnapshot(record.id);
       if (resolveParams?.reviewer && (!custody || !liveRecord || !custody.authorizes(liveRecord))) {
         respondApprovalNotFound(respond);
         return;
@@ -455,6 +455,10 @@ export function createApprovalHandlers(
           return;
         }
         respond(true, { applied: false, approval }, undefined);
+        return;
+      }
+      if (resolveParams?.instanceId && liveRecord?.instanceId !== resolveParams.instanceId) {
+        respondApprovalNotFound(respond);
         return;
       }
       const resolver = custody

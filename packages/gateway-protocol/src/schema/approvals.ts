@@ -302,6 +302,7 @@ export const ApprovalChannelReviewerSchema = closedObject({
 
 export const ApprovalResolveParamsSchema = closedObject({
   id: ApprovalRecordCommonFields.id,
+  instanceId: Type.Optional(NonEmptyString),
   kind: ApprovalKindSchema,
   decision: ApprovalDecisionSchema,
   reviewer: Type.Optional(ApprovalChannelReviewerSchema),

@@ -17,9 +17,16 @@ const activeSessionKey = "agent:main:main";
 const captureUiProof = process.env.OPENCLAW_CAPTURE_UI_PROOF === "1";
 const proofDir = path.join(process.cwd(), ".artifacts", "control-ui-e2e", "approval-flow");
 
-function approval(id: string, command: string, createdAtMs: number, sessionKey = activeSessionKey) {
+function approval(
+  id: string,
+  command: string,
+  createdAtMs: number,
+  sessionKey = activeSessionKey,
+  instanceId = `${id}:${createdAtMs}`,
+) {
   return {
     id,
+    instanceId,
     createdAtMs,
     expiresAtMs: Date.now() + 60_000,
     request: { command, agentId: "main", sessionKey },
@@ -120,7 +127,13 @@ suite.define(() => {
       .toBe(0);
     await gateway.emitGatewayEvent(
       "exec.approval.requested",
-      approval("approval-reused", "echo replacement approval", 2_000),
+      approval(
+        "approval-reused",
+        "echo replacement approval",
+        1_000,
+        activeSessionKey,
+        "replacement-instance",
+      ),
     );
     const replacement = currentPage.getByText("echo replacement approval", { exact: true });
     await replacement.waitFor();
