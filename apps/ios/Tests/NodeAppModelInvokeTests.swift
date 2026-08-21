@@ -443,13 +443,13 @@ private func makePendingExecApprovalJSON(
 {
     makePendingApprovalJSON(
         id: approvalID,
-        instanceID: instanceID,
         presentation: execApprovalPresentation(
             commandText: commandText,
             commandPreview: commandPreview,
             warningText: warningText,
             agentID: agentID,
-            allowedDecisions: allowedDecisions))
+            allowedDecisions: allowedDecisions),
+        instanceID: instanceID)
 }
 
 private func makeDeniedExecApprovalJSON(
