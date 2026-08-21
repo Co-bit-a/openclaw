@@ -9,7 +9,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { resolveIntegerOption } from "@openclaw/normalization-core/number-coercion";
-import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { AdmittedRunContext } from "../agents/admitted-run-context.js";
 import {
   buildAgentRunTerminalOutcomeFromLifecycleEvent,
@@ -930,7 +929,7 @@ export async function handleOpenResponsesHttpRequest(
   let terminalOutcome: AgentRunTerminalOutcome | undefined;
   let finalizeScheduled = false;
   let terminalLifecyclePhase: "end" | "error" = "end";
-  let terminalStreamError: string | undefined;
+  let terminalStreamFailed = false;
   const readFinalization = () => finalizeRequested;
 
   const maybeFinalize = () => {
@@ -1171,7 +1170,7 @@ export async function handleOpenResponsesHttpRequest(
       const phase = evt.data?.phase;
       if (phase === "end" || phase === "error") {
         if (phase === "error") {
-          terminalStreamError ??= normalizeOptionalString(evt.data?.error) ?? "Agent run failed";
+          terminalStreamFailed = true;
         }
         const incomingOutcome = buildAgentRunTerminalOutcomeFromLifecycleEvent({
           phase,
@@ -1251,13 +1250,13 @@ export async function handleOpenResponsesHttpRequest(
         requestFinalize("failed");
         return;
       }
-      if (priorFinalization?.status === "failed" && terminalStreamError) {
+      if (priorFinalization?.status === "failed" && terminalStreamFailed) {
         const failedResponse = createResponseResource({
           id: responseId,
           model,
           status: "failed",
           output: [],
-          error: { code: "server_error", message: terminalStreamError },
+          error: { code: "server_error", message: "internal error" },
           usage: finalUsage,
         });
         rememberResponseSession();
