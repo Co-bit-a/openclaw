@@ -332,6 +332,7 @@ export function getSessionDefaults(
       cfg,
       provider: resolved.provider,
       model: resolved.model,
+      agentId,
       modelContextTokens: catalogEntry?.contextTokens,
       modelContextWindow: contextWindowProfile.contextTokens,
       allowAsyncLoad: false,
