@@ -607,9 +607,6 @@ final class WatchConnectivityReceiver: NSObject, @unchecked Sendable {
         if let gatewayStableID = WatchGatewayID.exact(message.gatewayStableID) {
             payload["gatewayStableID"] = gatewayStableID
         }
-        if let approvalInstanceId = message.approvalInstanceId, !approvalInstanceId.isEmpty {
-            payload["approvalInstanceId"] = approvalInstanceId
-        }
         if let text = message.text?.trimmingCharacters(in: .whitespacesAndNewlines),
            !text.isEmpty
         {
@@ -657,6 +654,9 @@ final class WatchConnectivityReceiver: NSObject, @unchecked Sendable {
         ]
         if let gatewayStableID = WatchGatewayID.exact(message.gatewayStableID) {
             payload["gatewayStableID"] = gatewayStableID
+        }
+        if let approvalInstanceId = message.approvalInstanceId, !approvalInstanceId.isEmpty {
+            payload["approvalInstanceId"] = approvalInstanceId
         }
         if let sentAtMs = message.sentAtMs {
             payload["sentAtMs"] = sentAtMs
