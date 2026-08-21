@@ -1544,8 +1544,9 @@ class MainViewModel private constructor(
   fun resolveExecApproval(
     id: String,
     decision: String,
+    instanceId: String?,
   ) {
-    ensureRuntime().resolveExecApproval(id = id, decision = decision)
+    ensureRuntime().resolveExecApproval(id = id, decision = decision, instanceId = instanceId)
   }
 
   fun dismissExecApprovalsNotice(expected: GatewayExecApprovalNotice) {

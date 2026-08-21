@@ -793,6 +793,7 @@ class NodeRuntime private constructor(
     val stableId: String,
     val id: String,
     val decision: String,
+    val instanceId: String?,
     // Captured at registration: canonical readback needs it after a refresh has
     // already replaced the visible rows, or the legacy get parse drops the row.
     val createdAtMs: Long?,
@@ -2745,12 +2746,17 @@ class NodeRuntime private constructor(
   fun resolveExecApproval(
     id: String,
     decision: String,
+    instanceId: String? = null,
   ) {
     val exactId = id.takeIf(::isWellFormedGatewayApprovalId)
     val normalizedDecision = normalizeGatewayExecApprovalDecision(decision)
     if (exactId == null || normalizedDecision == null) return
     scope.launch {
-      resolveExecApprovalOnGateway(id = exactId, decision = normalizedDecision)
+      resolveExecApprovalOnGateway(
+        id = exactId,
+        decision = normalizedDecision,
+        instanceId = instanceId,
+      )
     }
   }
 
@@ -7203,6 +7209,7 @@ class NodeRuntime private constructor(
   private suspend fun resolveExecApprovalOnGateway(
     id: String,
     decision: String,
+    instanceId: String?,
   ) {
     val gatewayScope = captureGatewayDataScope() ?: return
     val methodsSnapshot = captureGatewayMethods()
@@ -7212,14 +7219,18 @@ class NodeRuntime private constructor(
         synchronized(execApprovalsStateLock) {
           if (!operatorConnected || id in resolvedExecApprovalIds) return@synchronized
           val currentRows = _execApprovals.value
-          if (currentRows.none { it.id == id && it.resolvingDecision == null }) return@synchronized
+          val selectedRow =
+            currentRows.firstOrNull {
+              it.id == id && it.instanceId == instanceId && it.resolvingDecision == null
+            } ?: return@synchronized
           if (pendingExecApprovalWrites.containsKey(id)) return@synchronized
           val pendingWrite =
             PendingExecApprovalWrite(
               gatewayScope.stableId,
               id,
               decision,
-              currentRows.firstOrNull { it.id == id }?.createdAtMs,
+              selectedRow.instanceId,
+              selectedRow.createdAtMs,
             )
           pendingExecApprovalWrites[id] = pendingWrite
           registeredWrite = pendingWrite
@@ -7236,7 +7247,14 @@ class NodeRuntime private constructor(
     val pendingWrite = registeredWrite
     if (!scopeCurrent || pendingWrite == null) return
     try {
-      val resolution = submitExecApprovalResolution(gatewayScope, methodsSnapshot, id, decision)
+      val resolution =
+        submitExecApprovalResolution(
+          gatewayScope,
+          methodsSnapshot,
+          id,
+          decision,
+          pendingWrite.instanceId,
+        )
       markExecApprovalWriteRequestFinished(pendingWrite)
       publishGatewayApprovalData(gatewayScope, methodsSnapshot) {
         synchronized(execApprovalsStateLock) {
@@ -7303,10 +7321,11 @@ class NodeRuntime private constructor(
     methodsSnapshot: GatewayMethodsSnapshot,
     id: String,
     decision: String,
+    instanceId: String?,
   ): GatewayExecApprovalResolution =
     when (methodsSnapshot.approvalRpcFamily) {
       GatewayApprovalRpcFamily.Canonical -> {
-        val params = buildGatewayExecApprovalResolveParams(id, decision).toString()
+        val params = buildGatewayExecApprovalResolveParams(id, decision, instanceId).toString()
         val response =
           requestGatewayApprovalData(
             gatewayScope = gatewayScope,
@@ -7326,6 +7345,7 @@ class NodeRuntime private constructor(
         val legacyParams =
           buildJsonObject {
             put("id", JsonPrimitive(id))
+            instanceId?.let { put("instanceId", JsonPrimitive(it)) }
             put("decision", JsonPrimitive(decision))
           }.toString()
         val legacyResponse =

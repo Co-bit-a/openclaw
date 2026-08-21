@@ -31,6 +31,7 @@ function createApprovalEvent(params: {
   runId: string;
   sessionKey?: string;
   toolCallId?: string;
+  instanceId?: string;
 }): EventFrame {
   return {
     type: "event",
@@ -45,6 +46,7 @@ function createApprovalEvent(params: {
         status: "pending",
         title: "Command approval requested",
         approvalId: params.approvalId ?? "approval-1",
+        instanceId: params.instanceId,
         toolCallId: params.toolCallId,
         command: "echo event",
         host: "gateway",
@@ -58,12 +60,14 @@ function createApprovalRequestEvent(params: {
   sessionKey?: string;
   command?: string;
   toolCallId?: string;
+  instanceId?: string;
 }): EventFrame {
   return {
     type: "event",
     event: "exec.approval.requested",
     payload: {
       id: params.approvalId ?? "approval-1",
+      instanceId: params.instanceId,
       createdAtMs: 1,
       expiresAtMs: 2,
       request: {
@@ -169,7 +173,9 @@ function hasApprovalRelay(agent: AcpGatewayAgent, approvalId: string): boolean {
       approvalRelays: Map<string, unknown>;
     }
   ).approvalRelays;
-  return relayMap.has(approvalId);
+  return [...relayMap.values()].some(
+    (relay) => (relay as { approvalId?: string }).approvalId === approvalId,
+  );
 }
 
 function requireRecord(value: unknown): Record<string, unknown> {
@@ -247,6 +253,31 @@ describe("ACP translator permission relay", () => {
       expect(approvalResolveCalls(harness.request)).toHaveLength(1);
     });
 
+    await cleanupHarness(harness);
+  });
+
+  it("keeps same-id replacement relays distinct and echoes each instance", async () => {
+    const harness = await createHarness();
+    const first = createApprovalEvent({
+      runId: harness.runId,
+      approvalId: "approval-reused",
+      instanceId: "instance:first",
+    });
+    const replacement = createApprovalEvent({
+      runId: harness.runId,
+      approvalId: "approval-reused",
+      instanceId: "instance:replacement",
+    });
+
+    await harness.agent.handleGatewayEvent(first);
+    await vi.waitFor(() => expect(approvalResolveCalls(harness.request)).toHaveLength(1));
+    await harness.agent.handleGatewayEvent(replacement);
+    await vi.waitFor(() => expect(approvalResolveCalls(harness.request)).toHaveLength(2));
+
+    expect(approvalResolveCalls(harness.request).map(([, params]) => params)).toEqual([
+      { id: "approval-reused", instanceId: "instance:first", decision: "allow-once" },
+      { id: "approval-reused", instanceId: "instance:replacement", decision: "allow-once" },
+    ]);
     await cleanupHarness(harness);
   });
 

@@ -22,6 +22,8 @@ export type AcpPendingPrompt = {
 
 export type AcpPendingApprovalRelay = {
   approvalId: string;
+  instanceId?: string;
+  relayKey: string;
   runId: string;
   sessionId: string;
   sessionKey: string;
