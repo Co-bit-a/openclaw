@@ -36,12 +36,11 @@ export function ensureOperatorApprovalResolutionRefs(db: DatabaseSync): void {
       ) {
         throw new Error("operator approval row cannot be assigned a transport reference");
       }
-      const presentation =
+      const rawInstanceId =
         typeof row.presentation_json === "string"
-          ? safeParseJsonRecord(row.presentation_json)
+          ? safeParseJsonRecord(row.presentation_json)?.instanceId
           : undefined;
-      const instanceId =
-        typeof presentation?.instanceId === "string" ? presentation.instanceId : undefined;
+      const instanceId = typeof rawInstanceId === "string" ? rawInstanceId : undefined;
       const resolutionRef = buildApprovalResolutionRef({
         approvalId: row.approval_id,
         approvalKind: row.kind,
