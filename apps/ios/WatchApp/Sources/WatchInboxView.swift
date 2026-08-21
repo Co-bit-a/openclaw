@@ -1467,7 +1467,7 @@ private enum WatchNativeTextInput {
 
 private struct WatchExecApprovalListView: View {
     var store: WatchInboxStore
-    var onDecision: ((String, String?, WatchExecApprovalDecision) -> Void)?
+    var onDecision: ((String, String?, String?, WatchExecApprovalDecision) -> Void)?
 
     var body: some View {
         WatchDetailScroll(title: "Approvals") {
@@ -1535,7 +1535,7 @@ private struct WatchExecApprovalListView: View {
 private struct WatchExecApprovalDetailView: View {
     var store: WatchInboxStore
     let record: WatchExecApprovalRecord
-    var onDecision: ((String, String?, WatchExecApprovalDecision) -> Void)?
+    var onDecision: ((String, String?, String?, WatchExecApprovalDecision) -> Void)?
 
     var body: some View {
         WatchDetailScroll(title: "Review Command") {
@@ -1569,6 +1569,7 @@ private struct WatchExecApprovalDetailView: View {
                             WatchDecisionButton(title: "Allow Once", color: .green) {
                                 self.onDecision?(
                                     currentRecord.approvalID,
+                                    currentRecord.approval.instanceId,
                                     currentRecord.approval.gatewayStableID,
                                     .allowOnce)
                             }
@@ -1578,6 +1579,7 @@ private struct WatchExecApprovalDetailView: View {
                             WatchDecisionButton(title: "Deny", color: WatchClawStyle.accent) {
                                 self.onDecision?(
                                     currentRecord.approvalID,
+                                    currentRecord.approval.instanceId,
                                     currentRecord.approval.gatewayStableID,
                                     .deny)
                             }

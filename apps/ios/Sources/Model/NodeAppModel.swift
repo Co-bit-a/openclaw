@@ -5972,6 +5972,7 @@ extension NodeAppModel {
         let preview = Self.trimmedOrNil(prompt.commandPreview) ?? Self.trimmedOrNil(prompt.commandText)
         return OpenClawWatchExecApprovalItem(
             id: prompt.id,
+            instanceId: prompt.instanceId,
             gatewayStableID: prompt.gatewayStableID,
             commandText: prompt.commandText,
             commandPreview: preview,
@@ -7258,6 +7259,7 @@ extension NodeAppModel {
         }
         let outcome = await resolveExecApprovalNotificationDecision(
             approvalId: approvalID,
+            approvalInstanceId: routedEvent.approvalInstanceId,
             approvalKind: prompt.kind,
             decision: routedEvent.decision.rawValue,
             expectedGatewayStableID: prompt.gatewayStableID,
@@ -8425,6 +8427,7 @@ extension NodeAppModel {
         }
         return ExecApprovalPrompt(
             id: approvalId,
+            instanceId: input.instanceId,
             kind: approvalKind,
             gatewayStableID: exactGatewayStableID,
             commandText: normalizedCommandText,
