@@ -79,7 +79,12 @@ class GatewayExecApprovalRuntimeTest {
       delay(50)
 
       assertEquals(0, requestCount)
-      assertEquals("instance:replacement", runtime.execApprovals.value.single().instanceId)
+      assertEquals(
+        "instance:replacement",
+        runtime.execApprovals.value
+          .single()
+          .instanceId,
+      )
     }
 
   @Test
