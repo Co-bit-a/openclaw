@@ -220,6 +220,7 @@ const ApprovalResolutionFields = {
 /** Approval that has not yet accepted a reviewer decision. */
 export const PendingApprovalSnapshotSchema = closedObject({
   ...ApprovalRecordCommonFields,
+  instanceId: Type.Optional(NonEmptyString),
   status: Type.Literal("pending"),
 });
 

@@ -418,6 +418,7 @@ private func pluginApprovalPresentation(
 private func makePendingApprovalJSON(
     id: String,
     presentation: ApprovalPresentation,
+    instanceID: String? = nil,
     createdAtMs: Int = 100,
     expiresAtMs: Int = 4_000_000_000_000) -> String
 {
@@ -427,11 +428,13 @@ private func makePendingApprovalJSON(
         createdatms: createdAtMs,
         expiresatms: expiresAtMs,
         presentation: presentation,
+        instanceid: instanceID,
         status: "pending"))))
 }
 
 private func makePendingExecApprovalJSON(
     _ approvalID: String,
+    instanceID: String? = nil,
     commandText: String = "echo held",
     commandPreview: String? = nil,
     warningText: String? = nil,
@@ -440,6 +443,7 @@ private func makePendingExecApprovalJSON(
 {
     makePendingApprovalJSON(
         id: approvalID,
+        instanceID: instanceID,
         presentation: execApprovalPresentation(
             commandText: commandText,
             commandPreview: commandPreview,
@@ -1565,11 +1569,13 @@ private final class TimingOutDeviceStatusService: DeviceStatusServicing {
     @Test @MainActor func `unified approval resolve reports and applies canonical late winner`() async throws {
         let paramsData = try JSONEncoder().encode(ApprovalResolveParams(
             id: "approval-race",
+            instanceid: "instance-race",
             kind: .exec,
             decision: .deny))
         let params = try #require(JSONSerialization.jsonObject(with: paramsData) as? [String: String])
         #expect(params == [
             "id": "approval-race",
+            "instanceId": "instance-race",
             "kind": "exec",
             "decision": "deny",
         ])

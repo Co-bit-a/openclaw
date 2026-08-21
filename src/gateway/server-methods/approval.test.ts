@@ -567,7 +567,7 @@ describe("unified approval handlers", () => {
     const databaseOptions = createDatabaseOptions();
     const managers = createManagers(databaseOptions);
     const id = "exec:approval.with_safe-punctuation";
-    registerExec(managers.exec, {
+    const pending = registerExec(managers.exec, {
       id,
       reviewerDeviceIds: ["reviewer-a"],
       request: {
@@ -600,6 +600,7 @@ describe("unified approval handlers", () => {
     expect(validateApprovalGetResult(response.result)).toBe(true);
     expect(approvalFromResult(response.result)).toMatchObject({
       id,
+      instanceId: pending.record.instanceId,
       status: "pending",
       urlPath: "/operator/approve/exec%3Aapproval.with_safe-punctuation",
       presentation: {

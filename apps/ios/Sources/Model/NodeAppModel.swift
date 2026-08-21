@@ -63,6 +63,7 @@ final class NodeAppModel {
 
     struct ExecApprovalPrompt: Identifiable, Equatable, Codable {
         let id: String
+        let instanceId: String?
         let kind: String?
         let gatewayStableID: String
         let commandText: String
@@ -80,6 +81,7 @@ final class NodeAppModel {
 
         init(
             id: String,
+            instanceId: String? = nil,
             kind: String?,
             gatewayStableID: String,
             commandText: String,
@@ -96,6 +98,7 @@ final class NodeAppModel {
             pluginSeverity: String? = nil)
         {
             self.id = id
+            self.instanceId = instanceId
             self.kind = kind
             self.gatewayStableID = gatewayStableID
             self.commandText = commandText
@@ -8345,6 +8348,7 @@ extension NodeAppModel {
             guard self.isValidExecApprovalPresentation(presentation) else { return nil }
             prompt = ExecApprovalPrompt(
                 id: snapshot.id,
+                instanceId: snapshot.instanceid,
                 kind: presentation.kind,
                 gatewayStableID: gatewayStableID,
                 commandText: presentation.commandtext,
@@ -8359,6 +8363,7 @@ extension NodeAppModel {
             guard self.isValidPluginApprovalPresentation(presentation) else { return nil }
             prompt = ExecApprovalPrompt(
                 id: snapshot.id,
+                instanceId: snapshot.instanceid,
                 kind: presentation.kind,
                 gatewayStableID: gatewayStableID,
                 commandText: presentation.title,
@@ -9031,6 +9036,7 @@ extension NodeAppModel {
         self.pendingExecApprovalPromptErrorText = nil
         let outcome = await resolveExecApprovalNotificationDecision(
             approvalId: prompt.id,
+            approvalInstanceId: prompt.instanceId,
             approvalKind: prompt.kind,
             decision: decision,
             expectedGatewayStableID: prompt.gatewayStableID,
@@ -9071,6 +9077,7 @@ extension NodeAppModel {
 
     private func resolveExecApprovalNotificationDecision(
         approvalId: String,
+        approvalInstanceId: String? = nil,
         approvalKind: String?,
         decision: String,
         expectedGatewayStableID: String,
@@ -9142,6 +9149,7 @@ extension NodeAppModel {
             let payloadJSON = try Self.encodePayload(
                 ApprovalResolveParams(
                     id: approvalID,
+                    instanceid: approvalInstanceId,
                     kind: approvalKind,
                     decision: approvalDecision))
             let response = try await self.operatorGateway.request(

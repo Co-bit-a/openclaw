@@ -416,6 +416,7 @@ export class ApprovalPage extends OpenClawLightDomElement {
     try {
       const result = await client.request<ApprovalResolveResult>("approval.resolve", {
         id,
+        ...(approval.instanceId ? { instanceId: approval.instanceId } : {}),
         kind,
         decision,
       });
