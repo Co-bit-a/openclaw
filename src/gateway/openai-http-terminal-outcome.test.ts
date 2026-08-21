@@ -17,14 +17,25 @@ describe("OpenAI HTTP terminal outcome", () => {
       reason: "completed",
     },
     {
-      name: "accepts a media-only fallback after a failed attempt",
+      name: "accepts a tool-call fallback after a failed attempt",
+      result: {
+        payloads: [{ text: "private provider failure", isError: true }],
+        meta: {
+          stopReason: "tool_calls",
+          pendingToolCalls: [{ id: "call_1", name: "search", arguments: "{}" }],
+        },
+      },
+      reason: "completed",
+    },
+    {
+      name: "retains failure when only unrepresentable media follows",
       result: {
         payloads: [
           { text: "private provider failure", isError: true },
           { mediaUrl: "https://example.invalid/recovered.png" },
         ],
       },
-      reason: "completed",
+      reason: "failed",
     },
     {
       name: "retains failure when only transient notices follow",

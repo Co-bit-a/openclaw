@@ -725,13 +725,6 @@ function buildAgentPrompt(
   };
 }
 
-function coerceRequest(val: unknown): OpenAiChatCompletionRequest {
-  if (!val || typeof val !== "object") {
-    return {};
-  }
-  return val as OpenAiChatCompletionRequest;
-}
-
 type PendingToolCall = {
   id?: unknown;
   name?: unknown;
@@ -1201,7 +1194,7 @@ export async function handleOpenAiHttpRequest(
     stopWatchingDisconnect();
     unsubscribe();
     if (includeUsage && streamIncludeUsage && finalUsage) {
-      writeUsageChunk(res, { runId, model, usage: finalUsage });
+      writeUsageChunk(res, { ...streamIdentity, usage: finalUsage });
     }
     writeSse(res, { error });
     writeDone(res);
@@ -1350,7 +1343,8 @@ export async function handleOpenAiHttpRequest(
         if (phase === "error" && terminalLifecyclePhase !== "error") {
           lifecycleErrorRecovered = false;
           terminalLifecycleError ??= {
-            message: normalizeOptionalString(evt.data?.error) ?? "Agent run failed",
+            // Provider diagnostics are operator logs, not part of the public OpenAI API contract.
+            message: "Agent run failed",
             type: "api_error",
           };
         }
@@ -1411,10 +1405,11 @@ export async function handleOpenAiHttpRequest(
       terminalOutcome = outcome;
       const streamError = readActiveStreamError();
       if (streamError) {
-        finishStreamWithError(streamError);
+        finishStreamWithError(streamError, true);
         return;
       }
       if (outcome.reason !== "completed") {
+        terminalLifecyclePhase = "error";
         requestFailedStream(outcome);
         return;
       }

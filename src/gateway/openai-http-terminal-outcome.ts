@@ -4,7 +4,6 @@ import {
   mergeAgentRunTerminalOutcome,
   type AgentRunTerminalOutcome,
 } from "../agents/agent-run-terminal-outcome.js";
-import { hasVisibleAgentPayload } from "../agents/embedded-agent-runner/message-visibility.js";
 import { isReplyPayloadStatusNotice, type ReplyPayload } from "../auto-reply/reply-payload.js";
 
 type LifecycleData = NonNullable<
@@ -13,7 +12,7 @@ type LifecycleData = NonNullable<
 
 type OpenAiHttpAgentResult = {
   payloads?: ReplyPayload[];
-  meta?: LifecycleData;
+  meta?: LifecycleData & { pendingToolCalls?: unknown };
 };
 
 function isTerminalPayload(payload: ReplyPayload): boolean {
@@ -29,14 +28,7 @@ function isTerminalPayload(payload: ReplyPayload): boolean {
   ) {
     return false;
   }
-  return hasVisibleAgentPayload(
-    { payloads: [payload] },
-    {
-      includeErrorPayloads: false,
-      includeReasoningPayloads: false,
-      includeSilentReplyPayloads: false,
-    },
-  );
+  return typeof payload.text === "string" && payload.text.trim().length > 0;
 }
 
 /** Return model-visible result text without leaking historical error payloads. */
@@ -60,6 +52,10 @@ export function resolveOpenAiHttpAgentRunTerminalOutcome(
   // SAFETY: callers pass agent results or nullish terminal outcomes through this shared projector.
   const agentResult = result as OpenAiHttpAgentResult | null | undefined;
   const meta = agentResult?.meta;
+  const completedToolCall =
+    meta?.stopReason === "tool_calls" &&
+    Array.isArray(meta.pendingToolCalls) &&
+    meta.pendingToolCalls.length > 0;
   // Completed tool calls can intentionally make a successful turn unsafe to
   // replay. Replay safety alone is not a provider or terminal-run failure.
   // Only the last real visible/error payload owns recovered fallback state.
@@ -67,7 +63,10 @@ export function resolveOpenAiHttpAgentRunTerminalOutcome(
   return mergeAgentRunTerminalOutcome(
     previous,
     buildAgentRunTerminalOutcomeFromLifecycleEvent({
-      phase: meta?.error != null || terminalPayload?.isError === true ? "error" : "end",
+      phase:
+        meta?.error != null || (!completedToolCall && terminalPayload?.isError === true)
+          ? "error"
+          : "end",
       data: meta,
     }),
   );

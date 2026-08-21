@@ -2168,58 +2168,6 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
   );
 
   it.each([false, true])(
-    "completes a recovered media-only chat after an earlier error payload with stream=%s",
-    async (stream) => {
-      const privateFailure = "Historical private provider failure";
-      agentCommand.mockClear();
-      agentCommand.mockResolvedValueOnce({
-        payloads: [
-          { text: privateFailure, isError: true },
-          {
-            mediaUrl: "https://example.invalid/recovered-image.png",
-            mediaUrls: ["https://example.invalid/recovered-document.pdf"],
-          },
-        ],
-      } as never);
-
-      const res = await postChatCompletions(enabledPort, {
-        stream,
-        model: "openclaw",
-        messages: [{ role: "user", content: "recover the generated attachment" }],
-      });
-      const body = await res.text();
-      expect(res.status, body).toBe(200);
-
-      if (stream) {
-        const data = parseSseDataLines(body);
-        const chunks = data
-          .filter((line) => line !== "[DONE]")
-          .map((line) => JSON.parse(line) as Record<string, unknown>);
-        expect(chunks.filter((chunk) => "error" in chunk)).toHaveLength(0);
-        expect(
-          chunks
-            .flatMap(
-              (chunk) =>
-                (chunk.choices as Array<{ finish_reason?: string | null }> | undefined) ?? [],
-            )
-            .filter((choice) => choice.finish_reason === "stop"),
-        ).toHaveLength(1);
-        expect(data.filter((line) => line === "[DONE]")).toHaveLength(1);
-        expect(data.at(-1)).toBe("[DONE]");
-      } else {
-        const response = JSON.parse(body) as {
-          choices?: Array<{ finish_reason?: string; message?: { content?: string } }>;
-        };
-        expect(response.choices?.[0]?.finish_reason).toBe("stop");
-      }
-
-      expect(body).not.toContain("api_error");
-      expect(body).not.toContain(privateFailure);
-      expect(agentCommand).toHaveBeenCalledTimes(1);
-    },
-  );
-
-  it.each([false, true])(
     "preserves a failed chat when only transient notices follow with stream=%s",
     async (stream) => {
       const privateFailure = "Historical private provider failure";
@@ -2412,7 +2360,12 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
         .filter((line) => line !== "[DONE]")
         .map((line) => JSON.parse(line) as Record<string, unknown>);
       expect(chunks.filter((chunk) => "error" in chunk)).toEqual([
-        { error: { message: "internal error", type: "api_error" } },
+        {
+          error: {
+            message: emitError && !emitEnd ? "Agent run failed" : "internal error",
+            type: "api_error",
+          },
+        },
       ]);
       const finishReasons = chunks.flatMap(
         (chunk) => (chunk.choices as Array<{ finish_reason?: string | null }> | undefined) ?? [],
@@ -2521,7 +2474,11 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
             finishReasons.push(...chunk.choices.map((choice) => choice.finish_reason));
           }
         }).rejects.toMatchObject({
-          error: { message: "internal error", type: "api_error" },
+          error: {
+            message:
+              producerTerminal && expectedPhase === "error" ? "Agent run failed" : "internal error",
+            type: "api_error",
+          },
         });
         expect(finishReasons).not.toContain("stop");
         expect(terminals).toEqual([
@@ -2870,7 +2827,7 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
           }
         }
       }).rejects.toMatchObject({
-        message: "All model fallback candidates failed",
+        message: "Agent run failed",
         type: "api_error",
       });
 
@@ -2881,8 +2838,9 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
       expect(deliveredContent).toEqual(["partial answer"]);
       expect(deliveredFinishReasons.every((reason) => reason === null)).toBe(true);
       expect(chunks.filter((chunk) => "error" in chunk)).toEqual([
-        { error: { message: "All model fallback candidates failed", type: "api_error" } },
+        { error: { message: "Agent run failed", type: "api_error" } },
       ]);
+      expect(await wireResponse.promise).not.toContain("All model fallback candidates failed");
       expect(data.at(-1)).toBe("[DONE]");
       expect(agentCommandMock).toHaveBeenCalledTimes(1);
       await vi.waitFor(() => expect(getActiveGatewayRootWorkCount()).toBe(idleRootCount));

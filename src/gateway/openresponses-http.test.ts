@@ -2134,41 +2134,10 @@ describe("OpenResponses HTTP API (e2e)", () => {
           prompt_cache_breakpoint: { mode: "explicit" },
         },
         {
-          type: "message",
-          id: "msg_replay_1",
-          role: "assistant",
-          phase: null,
-          status: "completed",
-          content: [
-            {
-              type: "output_text",
-              text: "Checking the weather.",
-              annotations: [
-                {
-                  type: "url_citation",
-                  start_index: 0,
-                  end_index: 8,
-                  title: "Weather",
-                  url: "https://example.invalid/weather",
-                },
-              ],
-              logprobs: [
-                {
-                  token: "Checking",
-                  bytes: [67, 104, 101, 99, 107, 105, 110, 103],
-                  logprob: -0.25,
-                  top_logprobs: [
-                    {
-                      token: "Checking",
-                      bytes: [67, 104, 101, 99, 107, 105, 110, 103],
-                      logprob: -0.25,
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        } satisfies OpenAI.Responses.ResponseOutputMessage,
+          type: "input_image",
+          detail: "auto",
+          image_url: "https://example.invalid/sdk-tool-image.png",
+        },
         {
           type: "input_file",
           detail: "auto",
@@ -2517,47 +2486,6 @@ describe("OpenResponses HTTP API (e2e)", () => {
   );
 
   it.each([false, true])(
-    "completes a recovered media-only response after an earlier error payload with stream=%s",
-    async (stream) => {
-      const privateFailure = "Historical private provider failure";
-      agentCommand.mockClear();
-      agentCommand.mockResolvedValueOnce({
-        payloads: [
-          { text: privateFailure, isError: true },
-          {
-            mediaUrl: "https://example.invalid/recovered-image.png",
-            mediaUrls: ["https://example.invalid/recovered-document.pdf"],
-          },
-        ],
-      } as never);
-
-      const res = await postResponses(enabledPort, {
-        stream,
-        model: "openclaw",
-        input: "recover the generated attachment",
-      });
-      const body = await res.text();
-      expect(res.status, body).toBe(200);
-
-      if (stream) {
-        const events = parseSseEvents(body);
-        expect(events.filter((event) => event.event === "response.completed")).toHaveLength(1);
-        expect(events.filter((event) => event.event === "response.failed")).toHaveLength(0);
-        expect(events.filter((event) => event.data === "[DONE]")).toHaveLength(1);
-        expect(events.at(-1)?.data).toBe("[DONE]");
-      } else {
-        const response = JSON.parse(body) as { status?: string; error?: unknown };
-        expect(response.status).toBe("completed");
-        expect(response.error).toBeUndefined();
-      }
-
-      expect(body).not.toContain("api_error");
-      expect(body).not.toContain(privateFailure);
-      expect(agentCommand).toHaveBeenCalledTimes(1);
-    },
-  );
-
-  it.each([false, true])(
     "preserves a failed response when only transient notices follow with stream=%s",
     async (stream) => {
       const privateFailure = "Historical private provider failure";
@@ -2790,9 +2718,9 @@ describe("OpenResponses HTTP API (e2e)", () => {
           total_tokens: 18,
         });
         expect(terminalEvents).toEqual(["response.failed"]);
-        expect(terminals).toEqual([
-          { phase: producerTerminal ? expectedPhase : "error", status: "error" },
-        ]);
+        expect(terminals).toEqual(
+          producerTerminal ? [{ phase: expectedPhase, status: "error" }] : [],
+        );
       } finally {
         unsubscribe();
       }
