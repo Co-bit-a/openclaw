@@ -2175,9 +2175,15 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
         { text: "Private commentary notice", isCommentary: true },
         { text: "Private compaction notice", isCompactionNotice: true },
         { text: "Private fallback notice", isFallbackNotice: true },
+        { text: "Private durable reasoning", isReasoning: true },
         { text: "Private reasoning snapshot", isReasoningSnapshot: true },
         { text: "Private status notice", isStatusNotice: true },
         { text: "Private hidden notice", visible: false },
+        {
+          text: "Private TTS supplement",
+          mediaUrl: "https://example.invalid/private-tts.mp3",
+          ttsSupplement: { spokenText: "Private TTS supplement" },
+        },
       ];
       agentCommand.mockClear();
       agentCommand.mockResolvedValueOnce({

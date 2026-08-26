@@ -4,7 +4,10 @@ import {
   mergeAgentRunTerminalOutcome,
   type AgentRunTerminalOutcome,
 } from "../agents/agent-run-terminal-outcome.js";
-import { isReplyPayloadStatusNotice, type ReplyPayload } from "../auto-reply/reply-payload.js";
+import {
+  isReplyPayloadTerminalContent,
+  type ReplyPayload,
+} from "../auto-reply/reply-payload.js";
 
 type LifecycleData = NonNullable<
   Parameters<typeof buildAgentRunTerminalOutcomeFromLifecycleEvent>[0]["data"]
@@ -15,16 +18,17 @@ type OpenAiHttpAgentResult = {
   meta?: LifecycleData & { pendingToolCalls?: unknown };
 };
 
-function isTerminalPayload(payload: ReplyPayload): boolean {
+type OpenAiHttpReplyPayload = ReplyPayload & { visible?: unknown };
+
+function isVisibleTerminalPayload(payload: OpenAiHttpReplyPayload): boolean {
   if (payload.isError === true) {
     return true;
   }
   if (
-    payload.isCommentary === true ||
+    !isReplyPayloadTerminalContent(payload) ||
     payload.isReasoningSnapshot === true ||
-    isReplyPayloadStatusNotice(payload) ||
-    // SAFETY: ReplyPayload is the canonical payload shape; older results may add visibility.
-    (payload as ReplyPayload & { visible?: unknown }).visible === false
+    // Older agent results may carry the pre-ReplyPayload visibility projection.
+    payload.visible === false
   ) {
     return false;
   }
@@ -37,7 +41,9 @@ export function resolveOpenAiHttpResultText(result: unknown): string {
   const payloads = (result as OpenAiHttpAgentResult | null | undefined)?.payloads;
   return Array.isArray(payloads)
     ? payloads
-        .filter((payload) => payload.isError !== true)
+        .filter(
+          (payload) => payload.isError !== true && isVisibleTerminalPayload(payload),
+        )
         .map((payload) => (typeof payload.text === "string" ? payload.text : ""))
         .filter(Boolean)
         .join("\n\n")
@@ -59,7 +65,7 @@ export function resolveOpenAiHttpAgentRunTerminalOutcome(
   // Completed tool calls can intentionally make a successful turn unsafe to
   // replay. Replay safety alone is not a provider or terminal-run failure.
   // Only the last real visible/error payload owns recovered fallback state.
-  const terminalPayload = agentResult?.payloads?.findLast(isTerminalPayload);
+  const terminalPayload = agentResult?.payloads?.findLast(isVisibleTerminalPayload);
   return mergeAgentRunTerminalOutcome(
     previous,
     buildAgentRunTerminalOutcomeFromLifecycleEvent({
