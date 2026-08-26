@@ -4,10 +4,7 @@ import {
   mergeAgentRunTerminalOutcome,
   type AgentRunTerminalOutcome,
 } from "../agents/agent-run-terminal-outcome.js";
-import {
-  isReplyPayloadTerminalContent,
-  type ReplyPayload,
-} from "../auto-reply/reply-payload.js";
+import { isReplyPayloadTerminalContent, type ReplyPayload } from "../auto-reply/reply-payload.js";
 
 type LifecycleData = NonNullable<
   Parameters<typeof buildAgentRunTerminalOutcomeFromLifecycleEvent>[0]["data"]
@@ -41,9 +38,7 @@ export function resolveOpenAiHttpResultText(result: unknown): string {
   const payloads = (result as OpenAiHttpAgentResult | null | undefined)?.payloads;
   return Array.isArray(payloads)
     ? payloads
-        .filter(
-          (payload) => payload.isError !== true && isVisibleTerminalPayload(payload),
-        )
+        .filter((payload) => payload.isError !== true && isVisibleTerminalPayload(payload))
         .map((payload) => (typeof payload.text === "string" ? payload.text : ""))
         .filter(Boolean)
         .join("\n\n")
