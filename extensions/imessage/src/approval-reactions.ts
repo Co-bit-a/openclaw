@@ -112,6 +112,7 @@ function readPersistedTarget(value: unknown): IMessageApprovalReactionTarget | n
   }
   return {
     approvalId: target.approvalId,
+    ...(typeof target.instanceId === "string" ? { instanceId: target.instanceId } : {}),
     approvalKind: target.approvalKind,
     allowedDecisions,
   };
@@ -276,6 +277,7 @@ export function registerIMessageApprovalReactionTarget(params: {
     conversation: params.conversation,
     messageId,
     approvalId,
+    instanceId: params.instanceId,
     approvalKind: params.approvalKind,
     allowedDecisions,
     ttlMs: params.ttlMs,
@@ -392,6 +394,7 @@ function resolveTarget(params: {
   return target
     ? {
         approvalId: target.approvalId,
+        ...(params.target?.instanceId ? { instanceId: params.target.instanceId } : {}),
         approvalKind: target.approvalKind,
         decision: target.decision,
       }
