@@ -31,11 +31,12 @@ async function main(): Promise<void> {
         await import("./src/browser/extension-native-host.runtime.js");
       return await buildBrowserNativeHostPairing();
     },
-    ensureRelay: async () => {
+    ensureRelay: async (port) => {
       const { ensureBrowserNativeRelay } =
         await import("./src/browser/extension-native-host.runtime.js");
       // Resolve the sibling entry here, not relative to a shared runtime chunk.
       return await ensureBrowserNativeRelay(
+        port,
         fileURLToPath(new URL("./relay-daemon-entry.js", import.meta.url)),
       );
     },

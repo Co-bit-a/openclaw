@@ -1,5 +1,5 @@
 import { getRuntimeConfig } from "openclaw/plugin-sdk/runtime-config-snapshot";
-import { buildBrowserExtensionPairing, firstExtensionRelayPort } from "./extension-pairing.js";
+import { buildBrowserExtensionPairing } from "./extension-pairing.js";
 import { ensureExtensionRelayDaemonProcess } from "./extension-relay-daemon-spawn.js";
 
 export function buildBrowserNativeHostPairing() {
@@ -9,9 +9,6 @@ export function buildBrowserNativeHostPairing() {
   });
 }
 
-export function ensureBrowserNativeRelay(entryPath: string) {
-  return ensureExtensionRelayDaemonProcess({
-    port: firstExtensionRelayPort(getRuntimeConfig()),
-    entryPath,
-  });
+export function ensureBrowserNativeRelay(port: number, entryPath: string) {
+  return ensureExtensionRelayDaemonProcess({ port, cfg: getRuntimeConfig(), entryPath });
 }

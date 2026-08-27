@@ -17,7 +17,7 @@ import { openAuthenticatedRelaySocket } from "./modules/relay-connection.js";
 import {
   ACCESS_MODE_SELECTED,
   createPairingConfigStore,
-  isDirectLoopbackRelayUrl,
+  directLoopbackRelayPort,
   reconnectDelayMs,
   toRelayTabInfo,
 } from "./modules/relay-core.js";
@@ -394,7 +394,7 @@ async function connectRelay(isConnectionAllowed = () => true) {
     return;
   }
   closeRelaySocket();
-  maybeEnsureRelayDaemon(relayUrl);
+  void maybeEnsureRelayDaemon(relayUrl, connectionIsCurrent).catch(() => {});
   setBadge("connecting");
   let ws;
   const owner = relayDebugger.createOwner(
@@ -506,8 +506,14 @@ function handleRelayOpeningDeadline() {
  * host (rate-limited) to spawn the standalone relay daemon so the extension
  * has something to connect to without a running Gateway.
  */
-function maybeEnsureRelayDaemon(relayUrl) {
-  if (reconnectAttempt === 0 || !isDirectLoopbackRelayUrl(relayUrl)) {
+async function maybeEnsureRelayDaemon(relayUrl, connectionIsCurrent) {
+  const relayPort = directLoopbackRelayPort(relayUrl);
+  if (reconnectAttempt === 0 || relayPort === null) {
+    return;
+  }
+  const { disabled } = await nativeBootstrap.status();
+  // Opt-out or pair revocation can win the storage read above.
+  if (disabled || retiredCopilotCustodyBlocked || !connectionIsCurrent()) {
     return;
   }
   const now = Date.now();
@@ -515,7 +521,7 @@ function maybeEnsureRelayDaemon(relayUrl) {
     return;
   }
   lastRelayEnsureAtMs = now;
-  void requestRelayEnsure(chrome).catch(() => {});
+  await requestRelayEnsure(relayPort, chrome);
 }
 
 function scheduleReconnect() {

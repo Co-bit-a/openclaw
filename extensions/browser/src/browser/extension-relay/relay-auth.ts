@@ -12,6 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createSecretFileAtomic, tryReadSecretFileSync } from "openclaw/plugin-sdk/secret-file";
 import { resolveOAuthDir } from "openclaw/plugin-sdk/state-paths";
+import { extractErrorCode } from "../../infra/errors.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 
 const log = createSubsystemLogger("browser").child("extension-relay");
@@ -20,6 +21,8 @@ const RELAY_SECRET_FILE = "browser-extension-relay.secret";
 const RELAY_SECRET_REREAD_ATTEMPTS = 50;
 const RELAY_SECRET_REREAD_DELAY_MS = 10;
 const PRIVATE_SECRET_FILE_MODE = 0o600;
+// Keep the existing secret-file reader's byte limit when reading our pinned descriptor.
+const MAX_RELAY_SECRET_BYTES = 16 * 1024;
 
 // resolveOAuthDir returns `${stateDir}/credentials`, the shared credentials dir.
 function resolveExtensionRelaySecretPath(env: NodeJS.ProcessEnv = process.env): string {
@@ -31,79 +34,79 @@ function normalizeToken(raw: string): string | null {
   return /^[0-9a-f]{64}$/.test(value) ? value : null;
 }
 
-/**
- * The relay secret is the whole auth model: anyone who can read it drives the
- * user's real browser, and loopback is not a trust boundary on a multi-user
- * host. The fs-safe reader rejects symlinks/hardlinks but does not re-check the
- * file mode or owner on read, so a secret whose permissions drifted
- * group/other-readable (loosened umask, restore, shared home) would still be
- * trusted. Classify the file's privacy before use.
- */
-export type RelaySecretPrivacy = "ok" | "heal" | "refuse";
-
-/**
- * Pure privacy decision for a secret file's stat. `heal`: we own it but the
- * mode is too broad — tighten to 0600 and continue. `refuse`: owned by another
- * user (never trust a foreign-owned credential). Windows uses ACLs, not POSIX
- * mode bits, and the create path establishes them, so it is always `ok` here.
- */
-export function classifyRelaySecretPrivacy(
-  stat: { uid: number; mode: number },
-  selfUid: number | undefined,
-  platform: NodeJS.Platform = process.platform,
-): RelaySecretPrivacy {
-  if (platform === "win32" || selfUid === undefined) {
-    return "ok";
-  }
-  if (stat.uid !== selfUid) {
-    return "refuse";
-  }
-  return (stat.mode & 0o077) === 0 ? "ok" : "heal";
-}
-
-/**
- * Return the secret path only when it is safe to read: absent (caller handles
- * null), already private, or self-healable by tightening our own file's mode.
- * Refuses a foreign-owned or unhealable file so a world-readable credential is
- * never trusted.
- */
-function resolveUsableRelaySecretPath(env: NodeJS.ProcessEnv): string | null {
-  const secretPath = resolveExtensionRelaySecretPath(env);
-  let stat: fs.Stats;
-  try {
-    stat = fs.lstatSync(secretPath);
-  } catch (err) {
-    // Absent is the normal "not paired yet" case; let the reader return null.
-    return (err as NodeJS.ErrnoException).code === "ENOENT" ? secretPath : null;
-  }
-  if (stat.isSymbolicLink() || !stat.isFile()) {
-    log.warn("ignoring extension relay secret: not a regular file");
-    return null;
-  }
-  const decision = classifyRelaySecretPrivacy(stat, process.getuid?.());
-  if (decision === "refuse") {
-    log.warn("ignoring extension relay secret: owned by another user");
-    return null;
-  }
-  if (decision === "heal") {
-    try {
-      fs.chmodSync(secretPath, PRIVATE_SECRET_FILE_MODE);
-      log.warn("tightened extension relay secret permissions to 0600");
-    } catch {
-      log.warn("ignoring extension relay secret: permissions are too broad and could not be fixed");
-      return null;
-    }
-  }
-  return secretPath;
-}
-
 /** Read the host-local relay token, or null when it has not been created yet. */
 export function readExtensionRelayToken(env: NodeJS.ProcessEnv = process.env): string | null {
-  const secretPath = resolveUsableRelaySecretPath(env);
-  if (!secretPath) {
-    return null;
+  const secretPath = resolveExtensionRelaySecretPath(env);
+  if (process.platform === "win32") {
+    return normalizeToken(
+      tryReadSecretFileSync(secretPath, "browser extension relay secret", {
+        rejectSymlink: true,
+      }) ?? "",
+    );
   }
-  return normalizeToken(tryReadSecretFileSync(secretPath, "browser extension relay secret") ?? "");
+  const uid = process.getuid?.();
+  let fd: number | undefined;
+  let raw: string;
+  try {
+    const before = fs.lstatSync(secretPath);
+    if (!before.isFile() || before.uid !== uid || before.nlink !== 1) {
+      return null;
+    }
+    // Permission checks, tightening, and reading must concern the same inode.
+    // NONBLOCK also prevents a file-to-pipe swap from hanging the native host.
+    fd = fs.openSync(
+      secretPath,
+      fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK,
+    );
+    const sameFile = (stat: fs.Stats) =>
+      stat.isFile() &&
+      stat.uid === uid &&
+      stat.nlink === 1 &&
+      stat.dev === before.dev &&
+      stat.ino === before.ino;
+    const opened = fs.fstatSync(fd);
+    if (!sameFile(opened) || !sameFile(fs.lstatSync(secretPath))) {
+      return null;
+    }
+    if ((opened.mode & 0o077) !== 0) {
+      fs.fchmodSync(fd, PRIVATE_SECRET_FILE_MODE);
+      log.warn("tightened extension relay secret permissions to 0600");
+    }
+    const buffer = Buffer.alloc(MAX_RELAY_SECRET_BYTES + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const count = fs.readSync(fd, buffer, length, buffer.length - length, null);
+      if (count === 0) {
+        break;
+      }
+      length += count;
+    }
+    const after = fs.fstatSync(fd);
+    if (
+      length > MAX_RELAY_SECRET_BYTES ||
+      !sameFile(after) ||
+      (after.mode & 0o077) !== 0 ||
+      !sameFile(fs.lstatSync(secretPath))
+    ) {
+      return null;
+    }
+    raw = buffer.subarray(0, length).toString("utf8");
+  } catch (error) {
+    if (extractErrorCode(error) !== "ENOENT") {
+      log.warn("ignoring extension relay secret: file changed or could not be read privately");
+    }
+    return null;
+  } finally {
+    if (fd !== undefined) {
+      fs.closeSync(fd);
+    }
+  }
+  // An exclusive first writer can still be filling an empty file. Preserve the
+  // reader's throwing outcome so ensure retries adoption instead of creating.
+  if (!raw.trim()) {
+    throw new Error("extension relay secret is empty");
+  }
+  return normalizeToken(raw);
 }
 
 /**
@@ -145,7 +148,7 @@ export async function ensureExtensionRelayToken(
         });
         return token;
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== "secret-exists") {
+        if (extractErrorCode(err) !== "secret-exists") {
           throw err;
         }
         lastError = err;
