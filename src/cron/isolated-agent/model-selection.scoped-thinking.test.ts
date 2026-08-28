@@ -67,4 +67,22 @@ describe("resolveCronThinkingSelection scoped hydration", () => {
     expect(selection.requestedThinkLevel).toBe("off");
     expect(scopedThinkingCatalogMock).not.toHaveBeenCalled();
   });
+
+  it("uses the catalog owner's flat agent thinking setting", async () => {
+    const { resolveCronThinkingSelection } = await import("./model-selection.js");
+    const selection = await resolveCronThinkingSelection({
+      cfg: {
+        agents: {
+          entries: {
+            nightly: { params: { thinking: "high" } },
+          },
+        },
+      },
+      owner: { ...owner, agentId: "nightly" },
+      provider: "openai",
+      model: "gpt-5.6",
+    });
+
+    expect(selection.requestedThinkLevel).toBe("high");
+  });
 });

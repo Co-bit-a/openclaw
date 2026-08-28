@@ -60,6 +60,23 @@ describe("acpConfiguredBindingConsumer thinking precedence", () => {
     expect(materializeThinking(cfg)).toBe("high");
   });
 
+  it("honors flat per-agent params.thinking over per-model policy", () => {
+    const cfg = {
+      ...baseCfg,
+      agents: {
+        defaults: baseCfg.agents.defaults,
+        entries: {
+          codex: {
+            model: "ollama-cloud/glm-5.2:cloud",
+            params: { thinking: "high" },
+          },
+        },
+      },
+    } satisfies OpenClawConfig;
+
+    expect(materializeThinking(cfg)).toBe("high");
+  });
+
   it("falls back to the global default when neither agent nor per-model policy is set", () => {
     const cfg = {
       ...baseCfg,

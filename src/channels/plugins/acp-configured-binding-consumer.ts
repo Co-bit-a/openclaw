@@ -89,7 +89,7 @@ function buildAcpTargetFactory(params: {
   const thinking =
     resolveAgentConfig(params.cfg, params.agentId)?.thinkingDefault ??
     (modelRef
-      ? resolveConfiguredThinkingDefault({ cfg: params.cfg, ...modelRef })
+      ? resolveConfiguredThinkingDefault({ cfg: params.cfg, ...modelRef, agentId: params.agentId })
       : params.cfg.agents?.defaults?.thinkingDefault);
   const cwd =
     bindingOverrides.cwd ??
