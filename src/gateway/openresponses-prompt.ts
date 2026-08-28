@@ -1,9 +1,4 @@
 // Prompt adapter from OpenAI Responses input items to OpenClaw agent messages.
-import { estimateToolResultTextChars } from "../agents/embedded-agent-runner/tool-result-text-budget.js";
-import {
-  DEFAULT_MAX_LIVE_TOOL_RESULT_AGGREGATE_CHARS,
-  DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS,
-} from "../agents/tool-result-limits.js";
 import {
   buildAgentMessageFromConversationEntries,
   type ConversationEntry,
@@ -14,8 +9,6 @@ import type { ContentPart, ItemParam } from "./open-responses.schema.js";
 
 const FILE_ONLY_USER_MESSAGE = "User sent file(s) with no text.";
 type ResponseMessageItem = Extract<ItemParam, { type: "message" }>;
-
-export class OpenResponsesToolOutputTooLargeError extends Error {}
 
 function extractTextContent(content: string | ContentPart[]): string {
   if (typeof content === "string") {
@@ -80,7 +73,6 @@ export function buildAgentPrompt(input: string | ItemParam[]): {
   const systemParts: string[] = [];
   const conversationEntries: ConversationEntry[] = [];
   const activeUserMessage = resolveActiveUserMessage(input);
-  let replayedToolOutputChars = 0;
 
   for (const item of input) {
     if (item.type === "message") {
@@ -118,21 +110,8 @@ export function buildAgentPrompt(input: string | ItemParam[]): {
       });
     } else if (item.type === "function_call_output") {
       // Structured SDK tool output remains transport data, not permission to
-      // fetch its file or image URLs. The HTTP boundary does not yet know the
-      // effective model context, so use the canonical low-context live-result cap.
+      // fetch its file or image URLs; serialize every accepted part losslessly.
       const body = typeof item.output === "string" ? item.output : JSON.stringify(item.output);
-      const bodyChars = estimateToolResultTextChars(body);
-      if (bodyChars > DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS) {
-        throw new OpenResponsesToolOutputTooLargeError(
-          `Function call output exceeds the ${DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS}-character live tool-result limit.`,
-        );
-      }
-      replayedToolOutputChars += bodyChars;
-      if (replayedToolOutputChars > DEFAULT_MAX_LIVE_TOOL_RESULT_AGGREGATE_CHARS) {
-        throw new OpenResponsesToolOutputTooLargeError(
-          `Function call outputs exceed the ${DEFAULT_MAX_LIVE_TOOL_RESULT_AGGREGATE_CHARS}-character aggregate live tool-result limit.`,
-        );
-      }
       conversationEntries.push({
         role: "tool",
         entry: {

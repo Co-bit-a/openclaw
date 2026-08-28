@@ -13,10 +13,7 @@ import {
 import { createClientToolNameConflictError } from "../agents/agent-tool-definition-adapter.js";
 import { createAgentCommandLifecycle } from "../agents/command/lifecycle.js";
 import { FailoverError } from "../agents/failover-error.js";
-import {
-  DEFAULT_MAX_LIVE_TOOL_RESULT_AGGREGATE_CHARS,
-  DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS,
-} from "../agents/tool-result-limits.js";
+import { DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS } from "../agents/tool-result-limits.js";
 import { HISTORY_CONTEXT_MARKER } from "../auto-reply/reply/history.js";
 import { CURRENT_MESSAGE_MARKER } from "../auto-reply/reply/mentions.js";
 import { resetConfigRuntimeState } from "../config/config.js";
@@ -2235,8 +2232,9 @@ describe("OpenResponses HTTP API (e2e)", () => {
     },
   );
 
-  it("rejects structured tool output that exceeds the model-visible prompt budget", async () => {
+  it("preserves high-volume structured tool output for context-aware handling", async () => {
     agentCommandMock.mockClear();
+    const oversizedText = "x".repeat(DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS + 1);
     const res = await postResponses(enabledPort, {
       model: "openclaw",
       input: [
@@ -2246,39 +2244,31 @@ describe("OpenResponses HTTP API (e2e)", () => {
           output: [
             {
               type: "input_text",
-              text: "x".repeat(DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS + 1),
+              text: oversizedText,
             },
           ],
         },
       ],
     });
 
-    const body = (await res.json()) as { error?: { message?: string; type?: string } };
-    expect(res.status).toBe(400);
-    expect(body.error?.type).toBe("invalid_request_error");
-    expect(body.error?.message).toContain(
-      `${DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS}-character live tool-result limit`,
-    );
-    expect(agentCommandMock).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(firstAgentOpts().message).toContain(oversizedText);
+    expect(agentCommandMock).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects cumulative replayed tool output above the aggregate prompt budget", async () => {
+  it("preserves cumulative high-volume replay for context-aware handling", async () => {
     agentCommandMock.mockClear();
-    const perOutputChars = Math.floor(DEFAULT_MAX_LIVE_TOOL_RESULT_AGGREGATE_CHARS / 4);
     const res = await postResponses(enabledPort, {
       model: "openclaw",
       input: Array.from({ length: 5 }, (_, index) => ({
         type: "function_call_output" as const,
         call_id: `call_aggregate_${index}`,
-        output: "x".repeat(perOutputChars),
+        output: "x".repeat(DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS),
       })),
     });
 
-    const body = (await res.json()) as { error?: { message?: string; type?: string } };
-    expect(res.status).toBe(400);
-    expect(body.error?.type).toBe("invalid_request_error");
-    expect(body.error?.message).toContain("aggregate live tool-result limit");
-    expect(agentCommandMock).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(agentCommandMock).toHaveBeenCalledTimes(1);
   });
 
   it.each([

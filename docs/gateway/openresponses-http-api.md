@@ -77,11 +77,6 @@ Send tool results back to the model:
 }
 ```
 
-Each replayed tool result is limited to 16,000 model-visible characters, and
-all replayed tool results in one request are limited to 64,000 characters in
-total. The limits apply to string and structured outputs. A request that
-exceeds either limit returns `400 invalid_request_error` before the agent runs.
-
 ### `reasoning` and `item_reference`
 
 Accepted for schema compatibility but ignored when building the prompt.
