@@ -8,7 +8,6 @@ type ModelExtraParamSources = {
   defaultParams?: Record<string, unknown>;
   modelParams?: Record<string, unknown>;
   agentEntryParams?: Record<string, unknown>;
-  agentModelParams?: Record<string, unknown>;
   paramSources: Array<Record<string, unknown> | undefined>;
 };
 
@@ -67,14 +66,10 @@ export function resolveModelExtraParamSources(params: {
   const agentConfig =
     params.agentId && params.config ? resolveAgentConfig(params.config, params.agentId) : undefined;
   const agentEntryParams = agentConfig?.params;
-  const agentModelParams = canonicalKey
-    ? (agentConfig?.models?.[canonicalKey]?.params ??
-      (legacyKey ? agentConfig?.models?.[legacyKey]?.params : undefined))
-    : undefined;
   // Per-agent model entries own catalog and runtime policy. Their `params`
   // shape is not a provider-request precedence scope.
   const paramSources = [defaultParams, modelParams, agentEntryParams];
-  return { defaultParams, modelParams, agentEntryParams, agentModelParams, paramSources };
+  return { defaultParams, modelParams, agentEntryParams, paramSources };
 }
 
 function resolveModelExtraParamEntryFromSources(

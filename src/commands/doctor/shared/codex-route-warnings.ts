@@ -228,7 +228,6 @@ function collectCodexModelParamHits(
       "agents.defaults.params",
       `agents.defaults.models.${route.canonicalModel}.params`,
       agentPath ? `${agentPath}.params` : undefined,
-      agentPath ? `${agentPath}.models.${route.canonicalModel}.params` : undefined,
     ];
     for (const { key, effectiveKey, value, sourceIndex } of resolveEffectiveModelExtraParams(
       sources,

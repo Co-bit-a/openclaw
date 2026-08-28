@@ -176,37 +176,6 @@ describe("resolveExtraParams", () => {
     });
   });
 
-  it("isolates agent-model params to the selected agent and model", () => {
-    const cfg = {
-      agents: {
-        entries: {
-          audit: {
-            models: {
-              "anthropic/claude-sonnet-4-6": { params: { temperature: 0.2 } },
-            },
-          },
-          main: {},
-        },
-      },
-    };
-
-    const otherAgent = resolveExtraParams({
-      cfg,
-      provider: "anthropic",
-      modelId: "claude-sonnet-4-6",
-      agentId: "main",
-    });
-    const otherModel = resolveExtraParams({
-      cfg,
-      provider: "anthropic",
-      modelId: "claude-opus-4-6",
-      agentId: "audit",
-    });
-
-    expect(otherAgent).toBeUndefined();
-    expect(otherModel).toBeUndefined();
-  });
-
   it("preserves higher-precedence agent parallelToolCalls override across alias styles", () => {
     // Canonicalization must happen after precedence resolution, or a broad
     // snake_case value can overwrite the agent's camelCase override.
