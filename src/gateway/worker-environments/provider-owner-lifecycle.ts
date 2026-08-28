@@ -4,7 +4,10 @@ import type { WorkerEnvironmentRecord } from "./store.js";
 import type { WorkerTunnelStopReason } from "./tunnel-contract.js";
 
 export function createWorkerProviderOwnerLifecycle(
-  options: Pick<WorkerProviderLifecycleOptions, "store" | "tunnelManager" | "serviceError">,
+  options: Pick<
+    WorkerProviderLifecycleOptions,
+    "store" | "tunnelManager" | "serviceError" | "placementStore"
+  >,
 ) {
   const { store, serviceError } = options;
   const tunnels = options.tunnelManager;
@@ -30,6 +33,15 @@ export function createWorkerProviderOwnerLifecycle(
     reason?: WorkerTunnelStopReason,
   ): Promise<WorkerEnvironmentRecord> => {
     requireCurrentOwner(record);
+    const sessionId = record.attachedSessionIds.length === 1 ? record.attachedSessionIds[0] : null;
+    if (sessionId) {
+      // Transfer an exact pending-result owner before credential revocation makes its
+      // same-lifecycle worker permanently unreachable to recovery.
+      options.placementStore?.prepareWorkspaceResultOwnerRevocation(
+        { sessionId, environmentId: record.environmentId, ownerEpoch: record.ownerEpoch },
+        new Error(record.lastError ?? "Cloud worker owner revoked before workspace recovery"),
+      );
+    }
     // Fence admission without erasing the attachment needed to stop a retained node worker.
     // A crash or failed stop leaves the exact scope available for teardown replay.
     store.revokeEnvironmentCredential(record.environmentId);

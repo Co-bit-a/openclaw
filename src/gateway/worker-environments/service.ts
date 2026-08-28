@@ -298,6 +298,7 @@ export function createWorkerEnvironmentService(options: WorkerEnvironmentService
     ensureNodeWorkerBundle: options.ensureNodeWorkerBundle,
     prepareNodeEnrollment: options.prepareNodeEnrollment,
     retireNodeEnrollment: options.retireNodeEnrollment,
+    placementStore: options.placementStore,
     providerCallTimeoutMs: options.providerCallTimeoutMs,
     tunnelManager: tunnelLifecycle,
     credentialBroker,
