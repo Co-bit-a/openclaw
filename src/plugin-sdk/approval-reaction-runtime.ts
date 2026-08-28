@@ -81,6 +81,7 @@ export type ApprovalReactionTargetRecord<TRoute = unknown> = {
 export type ApprovalReactionTargetResolution<TRoute = unknown> =
   ApprovalReactionDecisionResolution & {
     approvalId: string;
+    instanceId?: string;
     approvalKind: ChannelApprovalKind;
     route?: TRoute;
   };
@@ -243,6 +244,7 @@ function resolveApprovalReactionTargetInternal<TRoute>(params: {
   }
   return {
     approvalId,
+    ...(target.instanceId ? { instanceId: target.instanceId } : {}),
     approvalKind: resolvedKind,
     decision: decision.decision,
     normalizedEmoji: decision.normalizedEmoji,
@@ -420,6 +422,7 @@ function buildMetadataPayload(params: {
     buildApprovalPendingReplyPayload({
       approvalKind: params.view.approvalKind,
       approvalId: params.view.approvalId,
+      instanceId: params.view.instanceId,
       approvalSlug: params.view.approvalId.slice(0, 8),
       text: params.text,
       agentId: params.view.agentId ?? null,

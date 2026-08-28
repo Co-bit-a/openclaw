@@ -385,6 +385,7 @@ export function getExecApprovalReplyMetadata(
     return null;
   }
   const approvalKind = record.approvalKind === "plugin" ? "plugin" : "exec";
+  const instanceId = normalizeOptionalString(record.instanceId);
   const allowedDecisions = Array.isArray(record.allowedDecisions)
     ? record.allowedDecisions.filter(
         (value): value is ExecApprovalReplyDecision =>
@@ -395,6 +396,7 @@ export function getExecApprovalReplyMetadata(
   const sessionKey = normalizeOptionalString(record.sessionKey);
   return {
     approvalId,
+    ...(instanceId ? { instanceId } : {}),
     approvalSlug,
     approvalKind,
     agentId,
