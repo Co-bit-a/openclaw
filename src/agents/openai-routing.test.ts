@@ -79,8 +79,8 @@ describe("OpenAI runtime routing policy", () => {
     ).toBe("codex");
   });
 
-  it.each(["global", "agent", "agent-model"] as const)(
-    "keeps typed native controls at %s scope on Codex",
+  it.each(["global", "agent"] as const)(
+    "keeps typed native controls at %s scope on the authored provider route",
     (scope) => {
       const { config, agentId } = createScopedOpenAIRoutingConfig(scope, { thinking: "high" });
 
@@ -92,14 +92,14 @@ describe("OpenAI runtime routing policy", () => {
           agentId,
           env: {},
         }),
-      ).toBe("codex");
+      ).toBe("openclaw");
       expect(
         modelSelectionShouldEnsureCodexPlugin({
           model: "openai/gpt-5.6-sol",
           config,
           agentId,
         }),
-      ).toBe(true);
+      ).toBe(false);
     },
   );
 

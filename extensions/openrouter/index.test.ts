@@ -1100,6 +1100,50 @@ describe("openrouter provider hooks", () => {
     });
   });
 
+  it("orders normalized OpenRouter alias conflicts independently of insertion", async () => {
+    const provider = await registerSingleProviderPlugin(openrouterPlugin);
+    const aliases = [
+      [
+        "OpenRouter",
+        {
+          params: {
+            topK: 40,
+            provider: { sort: "price" },
+          },
+        },
+      ],
+      [
+        " OPENROUTER ",
+        {
+          params: {
+            topK: 20,
+            provider: { sort: "throughput", data_collection: "deny" },
+          },
+        },
+      ],
+    ] as const;
+    const resolve = (entries: ReadonlyArray<(typeof aliases)[number]>) =>
+      provider.extraParamsForTransport?.({
+        config: { models: { providers: Object.fromEntries(entries) } },
+        provider: " openrouter ",
+        modelId: "openai/gpt-5.4",
+        extraParams: {},
+        transport: "sse",
+      } as never)?.patch;
+
+    const forward = resolve(aliases);
+    const reverse = resolve(aliases.toReversed());
+
+    expect(reverse).toEqual(forward);
+    expect(forward).toEqual({
+      topK: 40,
+      provider: {
+        sort: "price",
+        data_collection: "deny",
+      },
+    });
+  });
+
   it("does not inject OpenRouter reasoning for Hunter Alpha", async () => {
     const capturedPayload = await captureOpenRouterWrappedPayload({
       modelId: "openrouter/hunter-alpha",

@@ -139,7 +139,10 @@ export function hasAuthoredProviderRequestParams(
   params: Parameters<typeof resolveModelExtraParamSources>[0],
 ): boolean {
   const sources = resolveModelExtraParamSources(params);
+  // Only model-scoped typed controls are route-neutral. Global and agent params
+  // remain authored provider behavior so existing configs do not switch runtimes.
   return resolveEffectiveModelExtraParams(sources).some(
-    ({ effectiveKey, value }) => !isAgentRuntimeModelParam(effectiveKey, value),
+    ({ effectiveKey, value, sourceIndex }) =>
+      sourceIndex !== 1 || !isAgentRuntimeModelParam(effectiveKey, value),
   );
 }

@@ -60,11 +60,12 @@ function resolveOpenRouterProviderConfigParams(
   }
 
   const providers = Object.entries(ctx.config?.models?.providers ?? {});
-  // Preserve routing split across normalized duplicates; merge nested params
-  // field-wise, then apply exact-key rows so aliases cannot override them.
+  // Preserve routing split across normalized duplicates. Merge aliases in stable
+  // raw-key order, then exact-key rows so config insertion order cannot decide conflicts.
   const matchedProviders = providers.filter(
     ([provider]) => normalizeProviderId(provider) === normalizedProvider,
   );
+  matchedProviders.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
   const prioritizedProviders = [
     ...matchedProviders.filter(([provider]) => provider.trim() !== requestedProvider),
     ...matchedProviders.filter(([provider]) => provider.trim() === requestedProvider),
