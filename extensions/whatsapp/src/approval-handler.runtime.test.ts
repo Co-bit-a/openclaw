@@ -196,7 +196,7 @@ describe("whatsappApprovalNativeRuntime", () => {
       ["current-message", "current-instance"],
     ] as const) {
       await expect(
-        whatsappApprovalNativeRuntime.interactions!.bindPending({
+        whatsappApprovalNativeRuntime.interactions!.bindPending!({
           entry: {
             accountId: "default",
             to: "+15551230000",
