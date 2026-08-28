@@ -9,10 +9,12 @@ import {
   markEmbeddedRunAuthProfileSuccess,
   reportEmbeddedRunSuccessfulAuthBinding,
 } from "./auth-profile-success.js";
+import { copyAttemptDeliveryState } from "./attempt-delivery-state.js";
 import { createEmbeddedRunContextRecoveryState } from "./context-recovery-state.js";
 import { TRUNCATED_REPLY_NOTICE_TEXT } from "./incomplete-turn-resolution.js";
 import { resolveEmbeddedRunAttemptTerminalState } from "./terminal-outcome.js";
 import {
+  createTerminalToolPresentationTracker,
   resolveEmbeddedRunTerminal,
   resolveSettledTurnFinalizationRequest,
 } from "./terminal-resolution.js";
@@ -335,6 +337,38 @@ describe("terminal resolution", () => {
     expect(text).not.toContain("Couldn't sign in");
   });
 
+  it("carries presentation across retries until a newer tool outcome replaces it", () => {
+    const tracker = createTerminalToolPresentationTracker();
+    const firstOrdinal = tracker.allocateOrdinal();
+    tracker.observe({
+      toolCallOrdinal: firstOrdinal,
+      terminalPresentation: "Fetched https://example.com",
+    });
+
+    expect(tracker.read()).toBe("Fetched https://example.com");
+
+    const retryOrdinal = tracker.allocateOrdinal();
+    expect(tracker.read()).toBe("Fetched https://example.com");
+    tracker.observe({ toolCallOrdinal: retryOrdinal });
+    tracker.observe({
+      toolCallOrdinal: firstOrdinal,
+      terminalPresentation: "stale presentation",
+    });
+
+    expect(tracker.read()).toBeUndefined();
+  });
+
+  it("keeps only the bounded latest MCP App view identity", () => {
+    expect(
+      copyAttemptDeliveryState({
+        latestMcpAppChannelView: { viewId: "view-latest" },
+        messagingToolSentTexts: [],
+        messagingToolSentMediaUrls: [],
+        messagingToolSentTargets: [],
+      } as never).latestMcpAppChannelView,
+    ).toEqual({ viewId: "view-latest" });
+  });
+
   it("retries a required empty reply even when deliberate silence is enabled", async () => {
     const activateInternalPrompt = vi.fn();
     const input = makeTerminalInput({
@@ -406,6 +440,74 @@ describe("terminal resolution", () => {
     expect(resolved.result.meta.terminalReplyKind).toBe("silent-empty");
     expect(resolved.result.meta.livenessState).toBe("working");
     expect(activateInternalPrompt).not.toHaveBeenCalled();
+  });
+
+  it("keeps an empty visible parent alive for accepted completion children", async () => {
+    const attempt = makeEmbeddedRunnerAttempt({
+      acceptedSessionSpawns: [{ runId: "child-run", childSessionKey: "agent:main:subagent:child" }],
+    });
+
+    const resolved = await resolveEmbeddedRunTerminal(
+      makeTerminalInput({
+        attempt,
+        runParams: { replyOperation: { turnKind: "visible" } as never },
+      }),
+    );
+
+    expect(resolved.action).toBe("complete");
+    if (resolved.action !== "complete") {
+      return;
+    }
+    expect(resolved.result.payloads).toEqual([
+      { text: "I’m continuing this work and will send the result when it is ready." },
+    ]);
+    expect(resolved.result.meta.continuationPending).toBe(true);
+  });
+
+  it("does not add a continuation status when the parent already replied", async () => {
+    const text = "The work is complete.";
+    const assistant = buildEmbeddedRunnerAssistant({ content: [{ type: "text", text }] });
+    const attempt = makeEmbeddedRunnerAttempt({
+      assistantTexts: [text],
+      acceptedSessionSpawns: [{ runId: "child-run", childSessionKey: "agent:main:subagent:child" }],
+      currentAttemptAssistant: assistant,
+      lastAssistant: assistant,
+    });
+
+    const resolved = await resolveEmbeddedRunTerminal(
+      makeTerminalInput({
+        attempt,
+        attemptAssistant: assistant,
+        payloadsWithToolMedia: [{ text }],
+        runParams: { replyOperation: { turnKind: "visible" } as never },
+      }),
+    );
+
+    expect(resolved.action).toBe("complete");
+    if (resolved.action === "complete") {
+      expect(resolved.result.payloads).toEqual([{ text }]);
+      expect(resolved.result.meta.continuationPending).toBeUndefined();
+    }
+  });
+
+  it("does not add a continuation status after an unelaborated message delivery", async () => {
+    const attempt = makeEmbeddedRunnerAttempt({
+      didSendViaMessagingTool: true,
+      acceptedSessionSpawns: [{ runId: "child-run", childSessionKey: "agent:main:subagent:child" }],
+    });
+
+    const resolved = await resolveEmbeddedRunTerminal(
+      makeTerminalInput({
+        attempt,
+        runParams: { replyOperation: { turnKind: "visible" } as never },
+      }),
+    );
+
+    expect(resolved.action).toBe("complete");
+    if (resolved.action === "complete") {
+      expect(resolved.result.payloads).toBeUndefined();
+      expect(resolved.result.meta.continuationPending).toBeUndefined();
+    }
   });
 
   it.each([
