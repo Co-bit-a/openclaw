@@ -65,6 +65,34 @@ extension OpenClawChatViewModel {
         return (session.effectiveFastMode ?? session.fastMode)?.isEnabled == true
     }
 
+    public var composerInlineModelLabel: String {
+        let label = if self.modelSelectionID == Self.defaultModelSelectionID {
+            self.defaultModelLabel.replacingOccurrences(of: "Default: ", with: "")
+        } else {
+            self.modelChoices.first { $0.selectionID == self.modelSelectionID }?.displayLabel ??
+                self.modelSelectionID
+        }
+        return label.split(separator: "/").last.map(String.init) ?? label
+    }
+
+    public var composerInlineEffortLabel: String {
+        let effort = self.thinkingOverrideIsInherited
+            ? String(localized: "Inherited \(self.thinkingLevel)")
+            : self.thinkingLevel
+        return self.fastModeSelectionID == "on"
+            ? String(localized: "\(effort), Fast")
+            : effort
+    }
+
+    public var composerInlineEffortAngle: Double {
+        guard self.thinkingLevel != "off",
+              let index = self.thinkingLevelOptions.firstIndex(where: { $0.id == self.thinkingLevel })
+        else { return -120 }
+        guard self.thinkingLevelOptions.count > 1 else { return 120 }
+        let fraction = Double(index) / Double(self.thinkingLevelOptions.count - 1)
+        return -120 + fraction * 240
+    }
+
     /// `models.list` currently has no fast-support capability field. Keep the
     /// control available and let the gateway validate the session patch.
     public var selectedModelSupportsFastMode: Bool {

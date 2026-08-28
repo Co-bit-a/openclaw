@@ -106,6 +106,31 @@ public enum OpenClawChatGatewayRequests {
             timeoutMs: self.defaultTimeoutMs)
     }
 
+    public static func composerSkillsStatus(agentID: String?) -> OpenClawChatGatewayRequest {
+        var params: [String: AnyCodable] = [:]
+        self.add(agentID, to: &params, key: "agentId")
+        return OpenClawChatGatewayRequest(
+            method: "skills.status",
+            params: params,
+            timeoutMs: self.defaultTimeoutMs)
+    }
+
+    public static func composerConfigGet() -> OpenClawChatGatewayRequest {
+        OpenClawChatGatewayRequest(method: "config.get", timeoutMs: self.defaultTimeoutMs)
+    }
+
+    public static func composerToolsEffective(
+        sessionKey: String,
+        agentID: String?) -> OpenClawChatGatewayRequest
+    {
+        var params: [String: AnyCodable] = ["sessionKey": AnyCodable(sessionKey)]
+        self.add(agentID, to: &params, key: "agentId")
+        return OpenClawChatGatewayRequest(
+            method: "tools.effective",
+            params: params,
+            timeoutMs: self.defaultTimeoutMs)
+    }
+
     public static func artifactDownload(
         sessionKey: String,
         agentID: String?,
@@ -326,10 +351,14 @@ public enum OpenClawChatGatewayRequests {
     public static func patchSessionSettings(
         sessionKey: String,
         agentID: String?,
+        expectedSessionID: String? = nil,
         model: String?? = nil,
         thinkingLevel: String?? = nil,
         fastMode: OpenClawChatFastMode?? = nil,
-        verboseLevel: String?? = nil) -> OpenClawChatGatewayRequest
+        verboseLevel: String?? = nil,
+        permissionMode: OpenClawChatPermissionMode?? = nil,
+        toolOverrides: OpenClawChatSessionToolOverrides?? = nil,
+        supportsSessionSettingsContract: Bool = false) -> OpenClawChatGatewayRequest
     {
         var params = self.sessionParams(sessionKey: sessionKey, agentID: agentID)
         if let model {
@@ -344,6 +373,15 @@ public enum OpenClawChatGatewayRequests {
         if let verboseLevel {
             params["verboseLevel"] = verboseLevel.map(AnyCodable.init) ?? AnyCodable(NSNull())
         }
+        if supportsSessionSettingsContract {
+            self.add(expectedSessionID, to: &params, key: "expectedSessionId")
+            if let permissionMode {
+                params["permissionMode"] = permissionMode.map { AnyCodable($0.rawValue) } ?? AnyCodable(NSNull())
+            }
+            if let toolOverrides {
+                params["toolOverrides"] = toolOverrides.map(self.toolOverridesValue) ?? AnyCodable(NSNull())
+            }
+        }
         return OpenClawChatGatewayRequest(
             method: "sessions.patch",
             params: params,
@@ -356,6 +394,23 @@ public enum OpenClawChatGatewayRequests {
         case .on: AnyCodable(true)
         case .automatic: AnyCodable("auto")
         }
+    }
+
+    private static func toolOverridesValue(_ overrides: OpenClawChatSessionToolOverrides) -> AnyCodable {
+        var value: [String: AnyCodable] = [:]
+        if let webSearch = overrides.webSearch {
+            value["webSearch"] = AnyCodable(webSearch)
+        }
+        if !overrides.skills.isEmpty {
+            value["skills"] = AnyCodable(overrides.skills.mapValues(AnyCodable.init))
+        }
+        if !overrides.mcpServers.isEmpty {
+            value["mcpServers"] = AnyCodable(overrides.mcpServers.mapValues(AnyCodable.init))
+        }
+        if !overrides.mcpToolsDeny.isEmpty {
+            value["mcpToolsDeny"] = AnyCodable(overrides.mcpToolsDeny.mapValues { AnyCodable($0) })
+        }
+        return AnyCodable(value)
     }
 
     public static func patchSession(

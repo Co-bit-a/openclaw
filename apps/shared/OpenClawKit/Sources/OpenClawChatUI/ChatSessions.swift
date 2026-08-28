@@ -130,21 +130,41 @@ public struct OpenClawChatModelChoice: Identifiable, Codable, Sendable, Hashable
 
 public struct OpenClawChatSessionSettingsPatch: Sendable, Equatable {
     /// Outer optional means unchanged; inner optional clears the override.
+    public let expectedSessionID: String?
     public let model: String??
     public let thinkingLevel: String??
     public let fastMode: OpenClawChatFastMode??
     public let verboseLevel: String??
+    public let permissionMode: OpenClawChatPermissionMode??
+    public let toolOverrides: OpenClawChatSessionToolOverrides??
 
     public init(
+        expectedSessionID: String? = nil,
         model: String?? = nil,
         thinkingLevel: String?? = nil,
         fastMode: OpenClawChatFastMode?? = nil,
-        verboseLevel: String?? = nil)
+        verboseLevel: String?? = nil,
+        permissionMode: OpenClawChatPermissionMode?? = nil,
+        toolOverrides: OpenClawChatSessionToolOverrides?? = nil)
     {
+        self.expectedSessionID = expectedSessionID
         self.model = model
         self.thinkingLevel = thinkingLevel
         self.fastMode = fastMode
         self.verboseLevel = verboseLevel
+        self.permissionMode = permissionMode
+        self.toolOverrides = toolOverrides
+    }
+
+    func withExpectedSessionID(_ expectedSessionID: String) -> Self {
+        Self(
+            expectedSessionID: expectedSessionID,
+            model: self.model,
+            thinkingLevel: self.thinkingLevel,
+            fastMode: self.fastMode,
+            verboseLevel: self.verboseLevel,
+            permissionMode: self.permissionMode,
+            toolOverrides: self.toolOverrides)
     }
 }
 
@@ -158,6 +178,8 @@ public struct OpenClawChatModelPatchResult: Decodable, Sendable, Equatable {
     public let fastMode: OpenClawChatFastMode?
     public let effectiveFastMode: OpenClawChatFastMode?
     public let verboseLevel: String?
+    public let permissionMode: OpenClawChatPermissionMode?
+    public let toolOverrides: OpenClawChatSessionToolOverrides?
 
     public init(
         key: String? = nil,
@@ -167,7 +189,9 @@ public struct OpenClawChatModelPatchResult: Decodable, Sendable, Equatable {
         thinkingLevels: [OpenClawChatThinkingLevelOption]? = nil,
         fastMode: OpenClawChatFastMode? = nil,
         effectiveFastMode: OpenClawChatFastMode? = nil,
-        verboseLevel: String? = nil)
+        verboseLevel: String? = nil,
+        permissionMode: OpenClawChatPermissionMode? = nil,
+        toolOverrides: OpenClawChatSessionToolOverrides? = nil)
     {
         self.key = key
         self.modelProvider = modelProvider
@@ -177,6 +201,8 @@ public struct OpenClawChatModelPatchResult: Decodable, Sendable, Equatable {
         self.fastMode = fastMode
         self.effectiveFastMode = effectiveFastMode
         self.verboseLevel = verboseLevel
+        self.permissionMode = permissionMode
+        self.toolOverrides = toolOverrides
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -194,6 +220,8 @@ public struct OpenClawChatModelPatchResult: Decodable, Sendable, Equatable {
         case fastMode
         case effectiveFastMode
         case verboseLevel
+        case permissionMode
+        case toolOverrides
     }
 
     private enum ResolvedKeys: String, CodingKey {
@@ -204,6 +232,8 @@ public struct OpenClawChatModelPatchResult: Decodable, Sendable, Equatable {
         case fastMode
         case effectiveFastMode
         case verboseLevel
+        case permissionMode
+        case toolOverrides
     }
 
     public init(from decoder: Decoder) throws {
@@ -220,6 +250,12 @@ public struct OpenClawChatModelPatchResult: Decodable, Sendable, Equatable {
             OpenClawChatFastMode.self,
             forKey: .effectiveFastMode)
         let entryVerboseLevel = try entry.decodeIfPresent(String.self, forKey: .verboseLevel)
+        let entryPermissionMode = try entry.decodeIfPresent(
+            OpenClawChatPermissionMode.self,
+            forKey: .permissionMode)
+        let entryToolOverrides = try entry.decodeIfPresent(
+            OpenClawChatSessionToolOverrides.self,
+            forKey: .toolOverrides)
         if container.contains(.resolved) {
             let resolved = try container.nestedContainer(keyedBy: ResolvedKeys.self, forKey: .resolved)
             self.modelProvider = try resolved.decodeIfPresent(String.self, forKey: .modelProvider)
@@ -238,6 +274,12 @@ public struct OpenClawChatModelPatchResult: Decodable, Sendable, Equatable {
                 forKey: .effectiveFastMode) ?? entryEffectiveFastMode
             self.verboseLevel = try resolved.decodeIfPresent(String.self, forKey: .verboseLevel)
                 ?? entryVerboseLevel
+            self.permissionMode = try resolved.decodeIfPresent(
+                OpenClawChatPermissionMode.self,
+                forKey: .permissionMode) ?? entryPermissionMode
+            self.toolOverrides = try resolved.decodeIfPresent(
+                OpenClawChatSessionToolOverrides.self,
+                forKey: .toolOverrides) ?? entryToolOverrides
         } else {
             self.modelProvider = entryModelProvider
             self.model = entryModel
@@ -246,6 +288,8 @@ public struct OpenClawChatModelPatchResult: Decodable, Sendable, Equatable {
             self.fastMode = entryFastMode
             self.effectiveFastMode = entryEffectiveFastMode
             self.verboseLevel = entryVerboseLevel
+            self.permissionMode = entryPermissionMode
+            self.toolOverrides = entryToolOverrides
         }
     }
 }
@@ -409,6 +453,8 @@ public struct OpenClawChatSessionEntry: Codable, Identifiable, Sendable, Hashabl
     public var verboseLevel: String?
     public var fastMode: OpenClawChatFastMode?
     public var effectiveFastMode: OpenClawChatFastMode?
+    public var permissionMode: OpenClawChatPermissionMode?
+    public var toolOverrides: OpenClawChatSessionToolOverrides?
 
     public var inputTokens: Int?
     public var outputTokens: Int?
@@ -481,6 +527,8 @@ public struct OpenClawChatSessionEntry: Codable, Identifiable, Sendable, Hashabl
         worktree: OpenClawChatSessionWorktree? = nil,
         fastMode: OpenClawChatFastMode? = nil,
         effectiveFastMode: OpenClawChatFastMode? = nil,
+        permissionMode: OpenClawChatPermissionMode? = nil,
+        toolOverrides: OpenClawChatSessionToolOverrides? = nil,
         startedAt: Double? = nil,
         endedAt: Double? = nil,
         runtimeMs: Double? = nil,
@@ -540,6 +588,8 @@ public struct OpenClawChatSessionEntry: Codable, Identifiable, Sendable, Hashabl
         self.verboseLevel = verboseLevel
         self.fastMode = fastMode
         self.effectiveFastMode = effectiveFastMode
+        self.permissionMode = permissionMode
+        self.toolOverrides = toolOverrides
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
         self.totalTokens = totalTokens

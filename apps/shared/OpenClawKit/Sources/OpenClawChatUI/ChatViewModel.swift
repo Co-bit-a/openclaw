@@ -146,6 +146,7 @@ public final class OpenClawChatViewModel {
     var swarmRefreshTask: Task<Void, Never>?
 
     public internal(set) var contextUsageFraction: Double?
+    let composerCapabilityState = OpenClawChatComposerCapabilityState()
     /// True while the visible transcript came from the offline cache and no
     /// live history response has replaced it yet (possibly stale).
     public internal(set) var isShowingCachedTranscript = false
@@ -322,7 +323,7 @@ public final class OpenClawChatViewModel {
     var acceptedPreferredThinkingLevelsByTarget: [ModelPatchTarget: String] = [:]
     var acceptedExplicitThinkingPreferencesByTarget: [ModelPatchTarget: Bool] = [:]
     var acceptedThinkingOverrideClearedByTarget: [ModelPatchTarget: Bool] = [:]
-    private var isCompacting = false
+    private(set) var isCompacting = false
     private var lastCompactAt: Date?
     private let compactCooldown: TimeInterval = 60
 
@@ -687,20 +688,8 @@ public final class OpenClawChatViewModel {
         startBootstrap()
     }
 
-    public func selectThinkingLevel(_ level: String) {
-        performSelectThinkingLevel(level)
-    }
-
-    public func selectVerboseLevel(_ level: String) {
-        performSelectVerboseLevel(level)
-    }
-
-    public func selectFastMode(_ selectionID: String) {
-        performSelectFastMode(selectionID)
-    }
-
     public func selectModel(_ selectionID: String) {
-        guard let request = reserveModelSelection(selectionID) else { return }
+        guard self.composerModelMutationAvailable, let request = reserveModelSelection(selectionID) else { return }
         enqueueSessionSettingsPatch(requestID: request.id, target: request.target) { [weak self] routeLease in
             guard let self else { return }
             await self.performSelectModel(request, routeLease: routeLease)

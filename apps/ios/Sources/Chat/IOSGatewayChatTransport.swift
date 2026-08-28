@@ -6,9 +6,9 @@ import OSLog
 
 struct IOSGatewayChatTransport: OpenClawChatTransport {
     static let logger = Logger(subsystem: "ai.openclawfoundation.app", category: "ios.chat.transport")
-    private let gateway: GatewayNodeSession
+    let gateway: GatewayNodeSession
     private let widgetGateway: GatewayNodeSession?
-    private let globalAgentId: String?
+    let globalAgentId: String?
     private let outboxGatewayID: String?
     private let sessionMutationRequest: (@Sendable (OpenClawChatGatewayRequest) async throws -> Data)?
     private let mediaArtifactLoader: IOSMediaArtifactLoader?
@@ -165,7 +165,7 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
             })
     }
 
-    private func currentSessionMutationRoute() async -> GatewayNodeSessionRoute? {
+    func currentSessionMutationRoute() async -> GatewayNodeSessionRoute? {
         if let outboxGatewayID {
             return await self.gateway.currentRoute(ifGatewayID: outboxGatewayID)
         }
@@ -195,7 +195,7 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
             policy: .scopeBareKeysToSelectedAgent)
     }
 
-    private func sessionTarget(
+    func sessionTarget(
         for sessionKey: String,
         overrideAgentID: String? = nil) -> SessionTarget
     {
@@ -378,18 +378,40 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
         patch: OpenClawChatSessionSettingsPatch,
         ifCurrentRoute expectedRoute: GatewayNodeSessionRoute?) async throws -> OpenClawChatModelPatchResult?
     {
+        let requiresSettingsContract = patch.expectedSessionID != nil ||
+            patch.permissionMode != nil || patch.toolOverrides != nil
+        let fallbackRoute: GatewayNodeSessionRoute? = if requiresSettingsContract, expectedRoute == nil {
+            await self.currentSessionMutationRoute()
+        } else {
+            nil
+        }
+        let settingsRoute = expectedRoute ?? fallbackRoute
+        let supportsSettingsContract = if let settingsRoute {
+            await self.gateway.supportsServerCapability(
+                .sessionSettingsContract,
+                ifCurrentRoute: settingsRoute) == true
+        } else {
+            false
+        }
+        guard !requiresSettingsContract || supportsSettingsContract else {
+            throw OpenClawChatTransportSendError.notDispatched
+        }
         let target = self.sessionTarget(for: sessionKey, overrideAgentID: agentID)
         let request = OpenClawChatGatewayRequests.patchSessionSettings(
             sessionKey: target.sessionKey,
             agentID: target.agentID,
+            expectedSessionID: patch.expectedSessionID,
             model: patch.model,
             thinkingLevel: patch.thinkingLevel,
             fastMode: patch.fastMode,
-            verboseLevel: patch.verboseLevel)
-        let response = if let expectedRoute {
+            verboseLevel: patch.verboseLevel,
+            permissionMode: patch.permissionMode,
+            toolOverrides: patch.toolOverrides,
+            supportsSessionSettingsContract: supportsSettingsContract)
+        let response = if let settingsRoute {
             try await self.gateway.request(
                 request,
-                ifCurrentRoute: expectedRoute,
+                ifCurrentRoute: settingsRoute,
                 distinguishPreDispatchRouteChange: true)
         } else {
             try await self.requestSessionMutation(request)

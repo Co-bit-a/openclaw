@@ -1,4 +1,5 @@
 import Foundation
+import OpenClawKit
 import OpenClawProtocol
 import Testing
 @testable import OpenClawChatUI
@@ -208,6 +209,68 @@ struct ChatGatewayRequestTests {
         #expect(reset.params["fastMode"]?.value is NSNull)
         #expect(reset.params["verboseLevel"]?.value is NSNull)
         #expect(automatic.params["fastMode"]?.value as? String == "auto")
+    }
+
+    @Test func `settings patch request preserves permission and sparse tool overrides`() throws {
+        let overrides = OpenClawChatSessionToolOverrides(
+            webSearch: false,
+            skills: ["release": false],
+            mcpServers: ["github": true],
+            mcpToolsDeny: ["github": ["create_issue", "delete_issue"]])
+        let request = OpenClawChatGatewayRequests.patchSessionSettings(
+            sessionKey: "global",
+            agentID: "reviewer",
+            expectedSessionID: "sess-global",
+            permissionMode: .some(.workspace),
+            toolOverrides: .some(overrides),
+            supportsSessionSettingsContract: true)
+
+        #expect(request.params["expectedSessionId"]?.value as? String == "sess-global")
+        #expect(request.params["permissionMode"]?.value as? String == "workspace")
+        let encoded = try JSONEncoder().encode(request.params["toolOverrides"])
+        let value = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(value["webSearch"] as? Bool == false)
+        #expect((value["skills"] as? [String: Bool])?["release"] == false)
+        #expect((value["mcpServers"] as? [String: Bool])?["github"] == true)
+        #expect((value["mcpToolsDeny"] as? [String: [String]])?["github"] == [
+            "create_issue",
+            "delete_issue",
+        ])
+
+        let reset = OpenClawChatGatewayRequests.patchSessionSettings(
+            sessionKey: "global",
+            agentID: "reviewer",
+            permissionMode: .some(nil),
+            toolOverrides: .some(nil),
+            supportsSessionSettingsContract: true)
+        #expect(reset.params["permissionMode"]?.value is NSNull)
+        #expect(reset.params["toolOverrides"]?.value is NSNull)
+
+        let releasedGateway = OpenClawChatGatewayRequests.patchSessionSettings(
+            sessionKey: "global",
+            agentID: "reviewer",
+            expectedSessionID: "sess-global",
+            permissionMode: .some(.workspace),
+            toolOverrides: .some(overrides))
+        #expect(releasedGateway.params["expectedSessionId"] == nil)
+        #expect(releasedGateway.params["permissionMode"] == nil)
+        #expect(releasedGateway.params["toolOverrides"] == nil)
+    }
+
+    @Test func `composer catalog requests preserve their owner scope`() {
+        let skills = OpenClawChatGatewayRequests.composerSkillsStatus(agentID: "reviewer")
+        let config = OpenClawChatGatewayRequests.composerConfigGet()
+        let tools = OpenClawChatGatewayRequests.composerToolsEffective(
+            sessionKey: "agent:reviewer:main",
+            agentID: "reviewer")
+
+        #expect(skills.method == "skills.status")
+        #expect(skills.params["agentId"]?.value as? String == "reviewer")
+        #expect(config.method == "config.get")
+        #expect(config.params.isEmpty)
+        #expect(tools.method == "tools.effective")
+        #expect(tools.params["sessionKey"]?.value as? String == "agent:reviewer:main")
+        #expect(tools.params["agentId"]?.value as? String == "reviewer")
     }
 
     @Test func `fork and create requests preserve routing identity`() {
@@ -450,6 +513,56 @@ struct ChatGatewayRequestTests {
 }
 
 struct ChatGatewayPayloadCodecTests {
+    @Test func `hello operator scopes preserve the exact advertised authorization`() {
+        let snapshot = Snapshot(
+            presence: [],
+            health: [:],
+            stateversion: StateVersion(presence: 0, health: 0),
+            uptimems: 0)
+        let hello = HelloOk(
+            type: "hello-ok",
+            _protocol: 3,
+            server: [:],
+            features: [:],
+            snapshot: snapshot,
+            auth: ["scopes": AnyCodable([
+                AnyCodable("operator.read"),
+                AnyCodable("operator.admin"),
+            ])],
+            policy: [:])
+        let missing = HelloOk(
+            type: "hello-ok",
+            _protocol: 3,
+            server: [:],
+            features: [:],
+            snapshot: snapshot,
+            auth: [:],
+            policy: [:])
+
+        #expect(hello.advertisedOperatorScopes() == ["operator.read", "operator.admin"])
+        #expect(missing.advertisedOperatorScopes() == nil)
+    }
+
+    @Test func `session row decodes permission and every tool override family`() throws {
+        let row = try JSONDecoder().decode(OpenClawChatSessionEntry.self, from: Data(#"""
+        {
+          "key":"main","permissionMode":"guarded","toolOverrides":{
+            "webSearch":false,
+            "skills":{"release":false},
+            "mcpServers":{"github":true},
+            "mcpToolsDeny":{"github":["create_issue"]}
+          }
+        }
+        """#.utf8))
+
+        #expect(row.permissionMode == .guarded)
+        #expect(row.toolOverrides == OpenClawChatSessionToolOverrides(
+            webSearch: false,
+            skills: ["release": false],
+            mcpServers: ["github": true],
+            mcpToolsDeny: ["github": ["create_issue"]]))
+    }
+
     @Test func `session key extracts canonical agent identity`() {
         #expect(OpenClawChatSessionKey.agentID(from: " agent:Reviewer:main ") == "Reviewer")
         #expect(OpenClawChatSessionKey.agentID(from: "agent::main") == nil)
