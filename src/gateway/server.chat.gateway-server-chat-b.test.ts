@@ -1753,7 +1753,12 @@ describe("gateway server chat", () => {
     name: string;
     preparedReasoning?: boolean;
     rawCatalog: "slow" | "empty" | "nonreasoning" | "prepared";
-    configured?: { agent?: "off" | "low"; model?: "off" | "medium"; global?: "off" | "high" };
+    configured?: {
+      agent?: "off" | "low";
+      agentParam?: "high";
+      model?: "off" | "medium";
+      global?: "off" | "high";
+    };
     thinkingLevel?: "off" | "xhigh";
     preparedEmpty?: boolean;
     preparedUnknown?: boolean;
