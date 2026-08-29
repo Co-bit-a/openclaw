@@ -464,10 +464,15 @@ export function renderChat(props: ChatProps) {
           aria-label=${t("chat.thread.showEarlier")}
           @click=${props.historyPagination.onShowEarlier}
         >
-          ${props.historyPagination.loading
-            ? html`<span class="session-run-spinner" aria-hidden="true"></span>`
-            : nothing}
-          <span role="status">
+          <span
+            class="session-run-spinner"
+            aria-hidden="true"
+            style=${styleMap({
+              visibility: props.historyPagination.loading ? "visible" : "hidden",
+            })}
+          ></span>
+          <span aria-hidden="true">${t("chat.thread.earlierHistoryAvailable")}</span>
+          <span class="sr-only" role="status">
             ${props.historyPagination.loading
               ? t("chat.thread.loadingEarlier")
               : t("chat.thread.earlierHistoryAvailable")}

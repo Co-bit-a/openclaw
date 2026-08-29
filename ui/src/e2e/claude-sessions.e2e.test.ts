@@ -814,7 +814,7 @@ suite.define(() => {
     }
   });
 
-  it("shows loaded native history before fetching and revealing an earlier page", async () => {
+  it("keeps the earlier-history action fixed while loading and reveals the fetched page", async () => {
     const page = await suite.browser.newPage({ viewport: { width: 1280, height: 800 } });
     const artifactDir = process.env.OPENCLAW_UI_E2E_ARTIFACT_DIR?.trim();
     const historyMessage = (seq: number, prefix: string) => ({
@@ -873,6 +873,8 @@ suite.define(() => {
       element.dispatchEvent(new Event("scroll"));
     });
     const showEarlier = page.getByRole("button", { name: "Show earlier" });
+    const idleHistoryAction = await showEarlier.boundingBox();
+    expect(idleHistoryAction).not.toBeNull();
     if (artifactDir) {
       await fs.mkdir(artifactDir, { recursive: true });
       await page.screenshot({
@@ -899,12 +901,16 @@ suite.define(() => {
     // can't return a stale load-time or prior-page request.
     await gateway.waitForRequest("chat.history", { after: initialRequestCount });
     await page.locator('.chat-history-available[aria-busy="true"]').waitFor();
+    const loadingHistoryAction = await showEarlier.boundingBox();
     if (artifactDir) {
       await page.screenshot({
         path: path.join(artifactDir, "01-native-history-loading.png"),
         fullPage: true,
       });
     }
+    expect(loadingHistoryAction).not.toBeNull();
+    expect(loadingHistoryAction?.x).toBeCloseTo(idleHistoryAction?.x ?? 0, 0);
+    expect(loadingHistoryAction?.width).toBeCloseTo(idleHistoryAction?.width ?? 0, 0);
     await gateway.rejectDeferred("chat.history", {
       code: "UNAVAILABLE",
       message: "history unavailable",
