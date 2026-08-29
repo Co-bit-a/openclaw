@@ -57,7 +57,6 @@ export function resolveInitialThinkLevel(params: {
   provider: string;
   modelId: string;
   model: { reasoning?: boolean };
-  agentId?: string;
 }): ThinkLevel {
   if (params.requested) {
     return params.requested;
@@ -66,7 +65,6 @@ export function resolveInitialThinkLevel(params: {
     cfg: params.config ?? {},
     provider: params.provider,
     model: params.modelId,
-    agentId: params.agentId,
     catalog: [
       {
         provider: params.provider,

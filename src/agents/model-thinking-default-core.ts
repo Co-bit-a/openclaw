@@ -14,7 +14,6 @@ import {
 } from "../auto-reply/thinking.shared.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { ModelCatalogEntry } from "./model-catalog.types.js";
-import { resolveModelExtraParamValue } from "./model-extra-params.js";
 import { legacyModelKey, modelKey, normalizeProviderId } from "./model-ref-shared.js";
 import { normalizeModelSelection } from "./model-selection-resolve.js";
 import { buildConfiguredModelCatalog } from "./model-selection-shared.js";
@@ -25,24 +24,19 @@ type ThinkingDefaultParams = {
   model: string;
   catalog?: ModelCatalogEntry[];
   agentRuntime?: string | null;
-  agentId?: string;
 };
 
 export function resolveConfiguredThinkingDefaultCore(params: {
   cfg: OpenClawConfig;
   provider: string;
   model: string;
-  agentId?: string;
 }): ThinkLevel | undefined {
-  const perModelThinking = resolveModelExtraParamValue(
-    {
-      config: params.cfg,
-      provider: params.provider,
-      modelId: params.model,
-      agentId: params.agentId,
-    },
-    "thinking",
-  );
+  const configuredModels = params.cfg.agents?.defaults?.models;
+  const canonicalKey = modelKey(params.provider, params.model);
+  const legacyKey = legacyModelKey(params.provider, params.model);
+  const perModelThinking =
+    configuredModels?.[canonicalKey]?.params?.thinking ??
+    (legacyKey ? configuredModels?.[legacyKey]?.params?.thinking : undefined);
   if (
     perModelThinking === false ||
     perModelThinking === "disabled" ||

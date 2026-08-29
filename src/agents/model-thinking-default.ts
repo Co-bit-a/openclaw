@@ -17,7 +17,6 @@ export function resolveConfiguredThinkingDefault(params: {
   cfg: OpenClawConfig;
   provider: string;
   model: string;
-  agentId?: string;
 }): ThinkLevel | undefined {
   return resolveConfiguredThinkingDefaultCore(params);
 }
@@ -29,7 +28,6 @@ export function resolveThinkingDefault(params: {
   model: string;
   catalog?: ModelCatalogEntry[];
   agentRuntime?: string | null;
-  agentId?: string;
 }): ThinkLevel {
   return resolveThinkingDefaultCore(params);
 }
@@ -41,7 +39,6 @@ export async function resolveThinkingDefaultWithRuntimeCatalog(params: {
   model: string;
   loadRuntimeCatalog: () => Promise<ModelCatalogEntry[]>;
   agentRuntime?: string | null;
-  agentId?: string;
 }): Promise<ThinkLevel> {
   const configuredCatalog = buildConfiguredModelCatalog({ cfg: params.cfg });
   const configuredSelectedEntry = configuredCatalog.find(
@@ -65,6 +62,5 @@ export async function resolveThinkingDefaultWithRuntimeCatalog(params: {
     model: params.model,
     catalog,
     agentRuntime: params.agentRuntime,
-    agentId: params.agentId,
   });
 }

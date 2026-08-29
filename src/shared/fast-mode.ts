@@ -40,7 +40,7 @@ function modelConfigKey(provider?: string, model?: string): string {
     : `${providerId}/${modelId}`;
 }
 
-function resolveFastModeModelParams(params: {
+export function resolveFastModeModelParams(params: {
   cfg: FastModeConfig | undefined;
   provider?: string;
   model?: string;

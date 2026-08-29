@@ -116,7 +116,6 @@ async function resolveNativeSlashDefaultThinkingLevel(params: {
     cfg: params.cfg,
     provider: params.provider,
     model: params.model,
-    agentId: params.agentId,
     loadRuntimeCatalog: () =>
       loadPreparedModelCatalog({
         config: params.cfg,

@@ -514,7 +514,6 @@ export async function resolveEmbeddedModelSelection(params: {
       cfg: params.cfg,
       provider,
       model,
-      agentId: params.sessionAgentId,
     });
   let catalogForThinking =
     allowedModelCatalog.length > 0

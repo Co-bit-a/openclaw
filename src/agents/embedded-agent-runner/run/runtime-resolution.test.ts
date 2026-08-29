@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { resolveThinkingDefaultWithRuntimeCatalog } from "../../model-thinking-default.js";
 import {
   resolveInitialThinkLevel,
   resolveRequestStreamTransportOverrides,
@@ -26,55 +25,5 @@ describe("resolveInitialThinkLevel", () => {
         model: { reasoning: true },
       }),
     ).toBe("ultra");
-  });
-
-  it("does not activate a nested agent-model thinking param", () => {
-    expect(
-      resolveInitialThinkLevel({
-        config: {
-          agents: {
-            defaults: {
-              models: { "openai/gpt-5.5": { params: { thinking: "low" } } },
-            },
-            entries: {
-              audit: {
-                models: { "openai/gpt-5.5": { params: { thinking: "high" } } },
-              },
-            },
-          },
-        },
-        provider: "openai",
-        modelId: "gpt-5.5",
-        model: { reasoning: true },
-        agentId: "audit",
-      }),
-    ).toBe("low");
-  });
-});
-
-describe("resolveThinkingDefaultWithRuntimeCatalog", () => {
-  it("preserves agent scope through the runtime-catalog lookup", async () => {
-    await expect(
-      resolveThinkingDefaultWithRuntimeCatalog({
-        cfg: {
-          agents: {
-            defaults: {
-              models: { "openai/gpt-5.5": { params: { thinking: "low" } } },
-            },
-            entries: {
-              audit: {
-                models: { "openai/gpt-5.5": { params: { thinking: "high" } } },
-              },
-            },
-          },
-        },
-        provider: "openai",
-        model: "gpt-5.5",
-        agentId: "audit",
-        loadRuntimeCatalog: async () => [
-          { provider: "openai", id: "gpt-5.5", name: "gpt-5.5", reasoning: true },
-        ],
-      }),
-    ).resolves.toBe("low");
   });
 });

@@ -11,8 +11,8 @@ type ModelExtraParamSources = {
   paramSources: Array<Record<string, unknown> | undefined>;
 };
 
-export const FAST_MODE_MODEL_PARAM_KEYS = ["fastMode", "fast_mode"] as const;
-export const FAST_MODE_CUTOFF_MODEL_PARAM_KEYS = [
+const FAST_MODE_MODEL_PARAM_KEYS = ["fastMode", "fast_mode"] as const;
+const FAST_MODE_CUTOFF_MODEL_PARAM_KEYS = [
   "fastAutoOnSeconds",
   "fast_auto_on_seconds",
   "fastSeconds",
