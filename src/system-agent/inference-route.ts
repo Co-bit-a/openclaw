@@ -259,7 +259,6 @@ export async function projectInferenceRoute(
         (typeof defaults?.model === "string" ? defaults.model : defaults?.model?.primary);
   const agentRouteOverrides = agent
     ? {
-        agentDir: agent.agentDir,
         model: structuredClone(agent.model),
         params: structuredClone(agent.params),
         tools: structuredClone(agent.tools),
