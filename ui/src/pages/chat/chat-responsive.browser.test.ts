@@ -4539,6 +4539,9 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
         <span id="failed-outcome-probe" class="session-progress-card__summary-count" data-outcome="failed">Failed</span>
         <span id="danger-color-probe" style="color: var(--danger)">Danger</span>
       </body></html>`);
+      await page.evaluate(() => {
+        document.documentElement.dataset.themeMode = "light";
+      });
 
       const summary = page.locator(".session-progress-card__summary");
       const card = page.locator(".session-progress-card--composer");
@@ -4588,6 +4591,26 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
         await match.dispose();
       };
       const expandedBefore = await readSummaryState();
+      const stackSurfaces = await page.evaluate(() => {
+        const snapshot = (selector: string) => {
+          const node = document.querySelector<HTMLElement>(selector)!;
+          const bounds = node.getBoundingClientRect();
+          return {
+            background: getComputedStyle(node).backgroundColor,
+            boxShadow: getComputedStyle(node).boxShadow,
+            left: bounds.left,
+            right: bounds.right,
+            topLeftRadius: getComputedStyle(node).borderTopLeftRadius,
+            topRightRadius: getComputedStyle(node).borderTopRightRadius,
+          };
+        };
+        return [
+          snapshot(".session-progress-card--composer"),
+          snapshot(".chat-queue"),
+          snapshot(".agent-chat__goal"),
+          snapshot(".agent-chat__input"),
+        ];
+      });
       await summary.hover();
       await waitForSummaryColors(
         [
@@ -4602,6 +4625,26 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
       const expandedAfter = await readSummaryState();
       expect(widthBefore).toBeCloseTo(760, 1);
       expect(widthAfter).toBeCloseTo(widthBefore ?? 0, 1);
+      expect(stackSurfaces.map(({ left }) => left)).toEqual([32, 32, 32, 32]);
+      expect(stackSurfaces.map(({ right }) => right)).toEqual([792, 792, 792, 792]);
+      expect(new Set(stackSurfaces.slice(0, 3).map(({ background }) => background))).toHaveProperty(
+        "size",
+        1,
+      );
+      expect(stackSurfaces.map(({ topLeftRadius }) => topLeftRadius)).toEqual([
+        "25px",
+        "25px",
+        "0px",
+        "25px",
+      ]);
+      expect(stackSurfaces.map(({ topRightRadius }) => topRightRadius)).toEqual([
+        "25px",
+        "25px",
+        "0px",
+        "25px",
+      ]);
+      expect(stackSurfaces[2]?.boxShadow).toContain("-1px 0px");
+      expect(stackSurfaces[2]?.boxShadow).toContain("1px 0px");
       expect(expandedBefore.titleLeft).toBeCloseTo(expandedBefore.firstMarkerLeft, 1);
       expect(expandedAfter.cardBackground).toBe(expandedBefore.cardBackground);
       expect(expandedAfter.summaryBackground).toBe(expandedBefore.summaryBackground);

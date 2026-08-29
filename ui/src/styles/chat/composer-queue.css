@@ -119,6 +119,17 @@
     0 2px 4px rgb(0 0 0 / 4%);
 }
 
+/* Connected rows share the queue's painted side edge. Without these two side
+   strokes, the queue's outer light-theme ring reads one pixel wider than Goal. */
+:root[data-theme-mode="light"]
+  :is(.chat-queue, .agent-chat__progress-float)
+  + .agent-chat__goal-float
+  .agent-chat__goal {
+  box-shadow:
+    -1px 0 rgb(0 0 0 / 6%),
+    1px 0 rgb(0 0 0 / 6%);
+}
+
 .chat-queue__item {
   --chat-queue-row-surface: var(--composer-attached-surface, var(--chat-composer-surface));
 
