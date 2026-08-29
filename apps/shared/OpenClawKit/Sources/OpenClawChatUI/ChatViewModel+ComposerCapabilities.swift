@@ -204,8 +204,8 @@ extension OpenClawChatViewModel {
     }
 
     func composerToolEnabled(server: String, tool: String) -> Bool {
-        if let entry = self.currentSessionEntry() {
-            return !(entry.toolOverrides?.mcpToolsDeny[server]?.contains(tool) ?? false)
+        if let overrides = self.currentSessionEntry()?.toolOverrides {
+            return !(overrides.mcpToolsDeny[server]?.contains(tool) ?? false)
         }
         return self.composerCapabilityCatalog.connectors
             .first(where: { $0.name == server })?.tools

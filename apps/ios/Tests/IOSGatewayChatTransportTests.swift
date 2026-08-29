@@ -27,6 +27,33 @@ struct IOSGatewayChatTransportTests {
         }
     }
 
+    @Test func `composer mutation compatibility preserves legacy controls only for unknown catalogs`() {
+        #expect(IOSGatewayChatTransport.composerMutationAvailable(
+            methodSupport: nil,
+            allowedByScope: false))
+        #expect(IOSGatewayChatTransport.composerMutationAvailable(
+            methodSupport: true,
+            allowedByScope: true))
+        #expect(!IOSGatewayChatTransport.composerMutationAvailable(
+            methodSupport: true,
+            allowedByScope: false))
+        #expect(!IOSGatewayChatTransport.composerMutationAvailable(
+            methodSupport: false,
+            allowedByScope: true))
+    }
+
+    @Test func `composer skill owner follows canonical session agent`() {
+        let selected = IOSGatewayChatTransport.sessionTarget(
+            for: "main",
+            selectedAgentID: "reviewer")
+        let canonical = IOSGatewayChatTransport.sessionTarget(
+            for: "agent:ops:main",
+            selectedAgentID: "reviewer")
+
+        #expect(IOSGatewayChatTransport.composerAgentID(for: selected) == "reviewer")
+        #expect(IOSGatewayChatTransport.composerAgentID(for: canonical) == "ops")
+    }
+
     @Test func `composer skill projection keeps agent filtering session enableable`() {
         let skill = SkillStatus(
             name: "Weather",

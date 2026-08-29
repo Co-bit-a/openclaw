@@ -27,6 +27,7 @@ extension IOSGatewayChatTransport {
         let canWrite = canAdmin || scopes.contains("operator.write")
         let canRead = canWrite || scopes.contains("operator.read")
         let target = self.sessionTarget(for: sessionKey, overrideAgentID: agentID)
+        let targetAgentID = Self.composerAgentID(for: target)
 
         async let configRequest = self.composerResponse(
             OpenClawChatGatewayRequests.composerConfigGet(),
@@ -34,7 +35,7 @@ extension IOSGatewayChatTransport {
             canRead: canRead,
             route: route)
         async let skillsRequest = self.composerResponse(
-            OpenClawChatGatewayRequests.composerSkillsStatus(agentID: target.agentID),
+            OpenClawChatGatewayRequests.composerSkillsStatus(agentID: targetAgentID),
             method: "skills.status",
             canRead: canRead,
             route: route)
@@ -83,8 +84,12 @@ extension IOSGatewayChatTransport {
 
         return OpenClawChatComposerCapabilityCatalog(
             sessionSettingsAvailable: sessionSettingsAvailable,
-            modelMutationAvailable: patchAdvertised && canWrite,
-            effortMutationAvailable: patchAdvertised && canAdmin,
+            modelMutationAvailable: Self.composerMutationAvailable(
+                methodSupport: patchCapability,
+                allowedByScope: canWrite),
+            effortMutationAvailable: Self.composerMutationAvailable(
+                methodSupport: patchCapability,
+                allowedByScope: canAdmin),
             webSearchBaseEnabled: config?.runtimeConfig.tools?.web?.search?.enabled != false,
             webSearchAvailable: configSurface.loaded,
             skills: (skillsReport?.skills ?? []).map(Self.composerSkill).sorted { $0.name < $1.name },
@@ -102,6 +107,14 @@ extension IOSGatewayChatTransport {
             toolOverrideMutationAvailable: sessionSettingsAvailable && patchAdvertised && canAdmin,
             canSelectFullPermission: sessionSettingsAvailable && patchAdvertised && canAdmin,
             loadFailureMessage: failureMessage)
+    }
+
+    static func composerMutationAvailable(methodSupport: Bool?, allowedByScope: Bool) -> Bool {
+        methodSupport == nil || (methodSupport == true && allowedByScope)
+    }
+
+    static func composerAgentID(for target: OpenClawChatSessionTarget) -> String? {
+        target.agentID ?? OpenClawChatSessionKey.agentID(from: target.sessionKey)
     }
 
     private func composerResponse(
