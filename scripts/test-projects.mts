@@ -5,10 +5,13 @@ import fs from "node:fs";
 import { performance } from "node:perf_hooks";
 import pMap from "p-map";
 import { formatMs } from "./lib/check-timing-summary.mts";
+import { runWithFailedTrailer, writeFailedTrailer } from "./lib/failed-trailer.mts";
+import { signalExitCode } from "./lib/managed-child-process.mts";
 import {
   prepareE2eVitestRuntime,
   prepareVitestRuntime,
 } from "./lib/vitest-build-prerequisites.mts";
+import { isVitestWorkerMetadataRequest } from "./lib/vitest-cli-mode.mts";
 import {
   isCiLikeEnv,
   resolveLocalFullSuiteProfile,
@@ -19,6 +22,7 @@ import {
   readShardTimings,
   writeShardTimings,
 } from "./lib/vitest-shard-timings.mts";
+import { createVitestWorkerRun, type VitestWorkerRun } from "./lib/vitest-worker-run.mts";
 import {
   resolveVitestCliEntry,
   resolveVitestNodeArgs,
@@ -49,7 +53,10 @@ import {
   writeVitestIncludeFile,
 } from "./test-projects.test-support.mts";
 
-type VitestRunSpec = BaseVitestRunSpec & { continueOnFailure?: boolean };
+type VitestRunSpec = BaseVitestRunSpec & {
+  continueOnFailure?: boolean;
+  workerRun?: VitestWorkerRun;
+};
 type VitestCommandOutcome = {
   code: number;
   noOutputTimedOut: boolean;
@@ -88,10 +95,11 @@ function cleanupVitestRunSpec(spec: VitestRunSpec) {
   }
 }
 
-function runPnpmSpecCommand(spec: VitestRunSpec, pnpmArgs: string[]) {
+function runPnpmSpecCommand(spec: VitestRunSpec, pnpmArgs: string[], workerRun?: VitestWorkerRun) {
   let noOutputTimedOut = false;
   return new Promise<VitestCommandOutcome>((resolve, reject) => {
     const { completion, getForwardedSignal } = spawnWatchedVitestProcess({
+      workerRun,
       pnpmArgs,
       env: spec.env,
       onNoOutputTimeout: () => {
@@ -134,7 +142,7 @@ async function runVitestSpec(spec: VitestRunSpec) {
         return preflightResult;
       }
     }
-    return await runPnpmSpecCommand(spec, spec.pnpmArgs);
+    return await runPnpmSpecCommand(spec, spec.pnpmArgs, spec.workerRun);
   } finally {
     cleanupVitestRunSpec(spec);
   }
@@ -174,8 +182,7 @@ async function runLoggedVitestSpec(spec: VitestRunSpec) {
   }
   if (result.signal) {
     console.error(`[test] ${spec.config} exited by signal ${result.signal}`);
-    process.kill(process.pid, result.signal);
-    return null;
+    return { ...result, timing: null };
   }
   return {
     ...result,
@@ -204,7 +211,11 @@ function printNoChangedTestTargets(args: string[], cwd: string, baseEnv: NodeJS.
   }
 }
 
-async function runVitestSpecsParallel(specs: VitestRunSpec[], concurrency: number) {
+async function runVitestSpecsParallel(
+  specs: VitestRunSpec[],
+  concurrency: number,
+  onSignal: (signal: NodeJS.Signals) => void,
+) {
   let exitCode = 0;
   let stopScheduling = false;
   const failures: FailedVitestShard[] = [];
@@ -216,10 +227,18 @@ async function runVitestSpecsParallel(specs: VitestRunSpec[], concurrency: numbe
       if (stopScheduling) {
         return;
       }
-      const result = await runLoggedVitestSpec(spec);
-      if (!result) {
+      let result: Awaited<ReturnType<typeof runLoggedVitestSpec>>;
+      try {
+        result = await runLoggedVitestSpec(spec);
+      } catch (error) {
+        stopScheduling = true;
+        throw error;
+      }
+      if (result.signal) {
         // A forwarded termination signal must not admit replacement shards during shutdown.
         stopScheduling = true;
+        onSignal(result.signal);
+        exitCode ||= signalExitCode(result.signal);
         return;
       }
       if (result.code !== 0) {
@@ -237,7 +256,8 @@ async function runVitestSpecsParallel(specs: VitestRunSpec[], concurrency: numbe
         timings.push(result.timing);
       }
     },
-    { concurrency, stopOnError: true },
+    // Join already-admitted shards even when another shard's group join fails.
+    { concurrency, stopOnError: false },
   );
   return { exitCode, failures, timings };
 }
@@ -326,88 +346,118 @@ async function main() {
     }
   }
 
-  const isFullSuiteRun =
-    targetArgs.length === 0 &&
-    changedTargetArgs === null &&
-    !runSpecs.some((spec) => spec.watchMode);
-  const isExplicitParallelMultiConfigRun =
-    Boolean(baseEnv.OPENCLAW_TEST_PROJECTS_PARALLEL) &&
-    runSpecs.length > 1 &&
-    !runSpecs.some((spec) => spec.watchMode);
-  const isParallelShardRun =
-    isFullSuiteRun || isFullExtensionsProjectRun(runSpecs) || isExplicitParallelMultiConfigRun;
-  if (isParallelShardRun) {
-    const concurrency = resolveParallelFullSuiteConcurrency(runSpecs.length, baseEnv);
-    if (!isCiLikeEnv(baseEnv) && runSpecs.length > 1) {
-      console.warn(
-        `[test] warning: broad local run will start ${runSpecs.length} Vitest shards; use \`pnpm test:changed\` for routine checks.`,
-      );
-    }
-    if (concurrency > 1) {
-      const shardTimings = readShardTimings(process.cwd(), baseEnv);
-      const orderedSpecs = orderFullSuiteSpecsForParallelRun(runSpecs, shardTimings).filter(
-        (spec): spec is VitestRunSpec => spec !== undefined,
-      );
-      const parallelSpecs = applyDefaultParallelVitestWorkerBudget(
-        applyParallelVitestCachePaths(orderedSpecs, {
-          cwd: process.cwd(),
-          env: baseEnv,
-        }),
-        baseEnv,
-      );
-      console.error(
-        `[test] running ${parallelSpecs.length} Vitest shards with parallelism ${concurrency}`,
-      );
-      const {
-        exitCode: parallelExitCode,
-        failures,
-        timings,
-      } = await runVitestSpecsParallel(parallelSpecs, concurrency);
-      writeShardTimings(timings, process.cwd(), baseEnv);
-      printTestSummary(
-        parallelExitCode === 0 ? "passed" : "failed",
-        parallelSpecs.length,
-        performance.now() - suiteStartedAt,
-        "Vitest summaries above are per-shard, not aggregate totals.",
-      );
-      for (const line of formatFailedShardDigest(failures)) {
-        console.error(line);
+  const workers =
+    runSpecs.some((spec) => spec.watchMode) || isVitestWorkerMetadataRequest(args)
+      ? undefined
+      : createVitestWorkerRun();
+  let exitSignal: NodeJS.Signals | null = null;
+  let printCompletedSummary: (() => void) | undefined;
+  try {
+    if (workers) {
+      for (const spec of runSpecs) {
+        spec.workerRun = workers;
       }
-      if (parallelExitCode !== 0) {
-        process.exitCode = parallelExitCode;
+    }
+    const isFullSuiteRun =
+      targetArgs.length === 0 &&
+      changedTargetArgs === null &&
+      !runSpecs.some((spec) => spec.watchMode);
+    const isExplicitParallelMultiConfigRun =
+      Boolean(baseEnv.OPENCLAW_TEST_PROJECTS_PARALLEL) &&
+      runSpecs.length > 1 &&
+      !runSpecs.some((spec) => spec.watchMode);
+    const isParallelShardRun =
+      isFullSuiteRun || isFullExtensionsProjectRun(runSpecs) || isExplicitParallelMultiConfigRun;
+    if (isParallelShardRun) {
+      const concurrency = resolveParallelFullSuiteConcurrency(runSpecs.length, baseEnv);
+      if (!isCiLikeEnv(baseEnv) && runSpecs.length > 1) {
+        console.warn(
+          `[test] warning: broad local run will start ${runSpecs.length} Vitest shards; use \`pnpm test:changed\` for routine checks.`,
+        );
       }
-      return;
-    }
-  }
-
-  let exitCode = 0;
-  const timings: ShardTiming[] = [];
-  for (const spec of runSpecs) {
-    const result = await runLoggedVitestSpec(spec);
-    if (!result) {
-      return;
-    }
-    if (result.timing) {
-      timings.push(result.timing);
-    }
-    if (result.code !== 0) {
-      exitCode = exitCode || result.code;
-      if (spec.continueOnFailure !== true) {
-        printTestSummary("failed", timings.length, performance.now() - suiteStartedAt);
-        process.exitCode = result.code;
+      if (concurrency > 1) {
+        const shardTimings = readShardTimings(process.cwd(), baseEnv);
+        const orderedSpecs = orderFullSuiteSpecsForParallelRun(runSpecs, shardTimings).filter(
+          (spec): spec is VitestRunSpec => spec !== undefined,
+        );
+        const parallelSpecs = applyDefaultParallelVitestWorkerBudget(
+          applyParallelVitestCachePaths(orderedSpecs, {
+            cwd: process.cwd(),
+            env: baseEnv,
+          }),
+          baseEnv,
+        );
+        console.error(
+          `[test] running ${parallelSpecs.length} Vitest shards with parallelism ${concurrency}`,
+        );
+        const {
+          exitCode: parallelExitCode,
+          failures,
+          timings,
+        } = await runVitestSpecsParallel(parallelSpecs, concurrency, (signal) => {
+          // Retain the signal even if another admitted shard's join rejects.
+          exitSignal ??= signal;
+        });
+        writeShardTimings(timings, process.cwd(), baseEnv);
+        printCompletedSummary = () =>
+          printTestSummary(
+            parallelExitCode === 0 ? "passed" : "failed",
+            parallelSpecs.length,
+            performance.now() - suiteStartedAt,
+            "Vitest summaries above are per-shard, not aggregate totals.",
+          );
+        for (const line of formatFailedShardDigest(failures)) {
+          console.error(line);
+        }
+        if (parallelExitCode !== 0) {
+          process.exitCode = parallelExitCode;
+        }
         return;
       }
     }
-  }
-  writeShardTimings(timings, process.cwd(), baseEnv);
-  printTestSummary(
-    exitCode === 0 ? "passed" : "failed",
-    timings.length,
-    performance.now() - suiteStartedAt,
-  );
 
-  if (exitCode !== 0) {
-    process.exitCode = exitCode;
+    let exitCode = 0;
+    const timings: ShardTiming[] = [];
+    for (const spec of runSpecs) {
+      const result = await runLoggedVitestSpec(spec);
+      if (result.signal) {
+        exitSignal = result.signal;
+        return;
+      }
+      if (result.timing) {
+        timings.push(result.timing);
+      }
+      if (result.code !== 0) {
+        exitCode = exitCode || result.code;
+        if (spec.continueOnFailure !== true) {
+          printCompletedSummary = () =>
+            printTestSummary("failed", timings.length, performance.now() - suiteStartedAt);
+          process.exitCode = result.code;
+          return;
+        }
+      }
+    }
+    writeShardTimings(timings, process.cwd(), baseEnv);
+    printCompletedSummary = () =>
+      printTestSummary(
+        exitCode === 0 ? "passed" : "failed",
+        timings.length,
+        performance.now() - suiteStartedAt,
+      );
+
+    if (exitCode !== 0) {
+      process.exitCode = exitCode;
+    }
+  } finally {
+    try {
+      await workers?.dispose();
+      printCompletedSummary?.();
+    } finally {
+      if (exitSignal) {
+        writeFailedTrailer("test", signalExitCode(exitSignal));
+        process.kill(process.pid, exitSignal);
+      }
+    }
   }
 }
 
@@ -423,7 +473,4 @@ function printTestSummary(
   );
 }
 
-main().catch((error: unknown) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+void runWithFailedTrailer("test", main);

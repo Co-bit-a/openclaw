@@ -78,7 +78,6 @@ vi.mock("../infra/file-lock.js", () => ({
 
 vi.mock("../plugins/provider-runtime.js", () => ({
   buildProviderMissingAuthMessageWithPlugin: () => undefined,
-  resolveExternalAuthProfilesWithPlugins: () => [],
 }));
 
 const providerModelNormalizationMock = vi.hoisted(() => ({

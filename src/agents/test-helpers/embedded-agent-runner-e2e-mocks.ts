@@ -359,6 +359,9 @@ export function installEmbeddedRunnerFastRunE2eMocks(
   vi.doMock("../embedded-agent-runner/run/attempt.js", () => ({
     runEmbeddedAttempt: (params: unknown) => options.runEmbeddedAttempt(params),
   }));
+  vi.doMock("../../plugins/provider-external-auth.js", () => ({
+    resolveExternalAuthProfilesWithPlugins: vi.fn(() => []),
+  }));
   vi.doMock("../../plugins/provider-runtime.js", () => ({
     applyProviderResolvedTransportWithPlugin: vi.fn(() => undefined),
     augmentModelCatalogWithProviderPlugins: vi.fn(async () => []),
@@ -371,7 +374,6 @@ export function installEmbeddedRunnerFastRunE2eMocks(
     resolveProviderAuthProfileId: vi.fn(() => undefined),
     resolveProviderCapabilitiesWithPlugin: vi.fn(() => undefined),
     resolveProviderDeprecatedAuthProfileIds: vi.fn(() => []),
-    resolveExternalAuthProfilesWithPlugins: vi.fn(() => []),
     resolveProviderSyntheticAuthWithPlugin: vi.fn(() => undefined),
     runProviderDynamicModel: vi.fn(() => undefined),
     shouldPreferProviderRuntimeResolvedModel: vi.fn(() => false),

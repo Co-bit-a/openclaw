@@ -14,8 +14,8 @@ import {
   FailoverError,
   buildFailoverRemediationHint,
   describeFailoverError,
+  findCliMaxTurnsError,
   isFailoverError,
-  isNonProviderRuntimeCoordinationError,
   resolveModelFallbackError,
   type FallbackAttemptRecord,
 } from "./failover-error.js";
@@ -187,16 +187,6 @@ function isTerminalAbortCandidate(candidate: unknown): boolean {
   );
 }
 
-function isTerminalAbort(signal: AbortSignal | undefined): boolean {
-  if (!signal?.aborted) {
-    return false;
-  }
-  const reason = signal.reason;
-  return reason instanceof Error
-    ? [reason, ...getErrorCauseCandidates(reason)].some(isTerminalAbortCandidate)
-    : isTerminalAbortCandidate(reason);
-}
-
 function isTerminalAbortFromError(err: unknown): boolean {
   if (!(err instanceof Error)) {
     return false;
@@ -259,7 +249,11 @@ async function runFallbackCandidate<T>(params: {
       isAgentRunTerminalTimeout(err) ||
       isCommandLaneTaskTimeoutError(err) ||
       isAgentHarnessPreflightError(err) ||
-      isSandboxProvisioningError(err)
+      isSandboxProvisioningError(err) ||
+      isCallerAbortSignal(params.abortSignal) ||
+      isAgentRunDirectAbortReason(err) ||
+      isAgentRunRestartAbortReason(err) ||
+      isTerminalAbortFromError(err)
     ) {
       throw err;
     }
@@ -269,17 +263,10 @@ async function runFallbackCandidate<T>(params: {
       sessionId: params.attribution?.sessionId,
       lane: params.attribution?.lane,
     });
-    if (
-      fallbackError.kind === "coordination" ||
-      isTerminalAbort(params.abortSignal) ||
-      isCallerAbortSignal(params.abortSignal) ||
-      isAgentRunDirectAbortReason(err) ||
-      isAgentRunRestartAbortReason(err) ||
-      isTerminalAbortFromError(err)
-    ) {
+    if (fallbackError.kind === "coordination") {
       throw err;
     }
-    return { ok: false, error: fallbackError.kind === "failover" ? fallbackError.error : err };
+    return { ok: false, error: fallbackError.error };
   }
 }
 
@@ -306,18 +293,30 @@ export async function runFallbackAttempt<T>(params: {
     }
 > {
   const runResult = await runFallbackCandidate(params);
+  const classification = runResult.ok
+    ? await params.classifyResult?.({
+        result: runResult.result,
+        provider: params.provider,
+        model: params.model,
+        attempt: params.attempt,
+        total: params.total,
+      })
+    : undefined;
+  const attemptError = runResult.ok
+    ? resolveResultClassificationError(classification, params)
+    : runResult.error;
+  if (runResult.ok && attemptError && isCallerAbortSignal(params.abortSignal)) {
+    throw toErrorObject(attemptError, "Non-Error thrown");
+  }
+  // Thrown, captured-preflight and callback-returned stops share this exit.
+  // Do not replay tool effects or replace the original wrapper with its cause.
+  if (findCliMaxTurnsError(attemptError)) {
+    throw attemptError;
+  }
   if (!runResult.ok) {
     return { error: runResult.error };
   }
-  const classification = await params.classifyResult?.({
-    result: runResult.result,
-    provider: params.provider,
-    model: params.model,
-    attempt: params.attempt,
-    total: params.total,
-  });
-  const classifiedError = resolveResultClassificationError(classification, params);
-  if (!classifiedError) {
+  if (!attemptError) {
     return {
       success: buildFallbackSuccess({
         result: runResult.result,
@@ -327,15 +326,12 @@ export async function runFallbackAttempt<T>(params: {
       }),
     };
   }
-  if (isTerminalAbort(params.abortSignal) || isCallerAbortSignal(params.abortSignal)) {
-    throw toErrorObject(classifiedError, "Non-Error thrown");
-  }
   const preserveResultOnExhaustion =
     classification &&
     "preserveResultOnExhaustion" in classification &&
     classification.preserveResultOnExhaustion === true;
   return {
-    error: classifiedError,
+    error: attemptError,
     classifiedResult: {
       result: runResult.result,
       provider: params.provider,
@@ -697,16 +693,23 @@ export function shouldDiscardDeferredSessionSuspension(params: {
   error: unknown;
   abortSignal?: AbortSignal;
 }): boolean {
-  return (
-    isTerminalAbort(params.abortSignal) ||
+  if (
     isCallerAbortSignal(params.abortSignal) ||
     isAgentRunTerminalTimeout(params.error) ||
     isAgentRunDirectAbortReason(params.error) ||
     isAgentRunRestartAbortReason(params.error) ||
     isTerminalAbortFromError(params.error) ||
-    isCommandLaneTaskTimeoutError(params.error) ||
-    isNonProviderRuntimeCoordinationError(params.error) ||
-    isTranscriptNotContinuableError(params.error) ||
-    isLikelyContextOverflowError(formatErrorMessage(params.error))
+    isCommandLaneTaskTimeoutError(params.error)
+  ) {
+    return true;
+  }
+  const resolution = resolveModelFallbackError(params.error);
+  // Terminal stops retain pending suspension; cleanup must not consult
+  // provider policy again, including context-overflow heuristics.
+  return (
+    resolution.kind === "coordination" ||
+    (resolution.kind !== "terminal" &&
+      (isTranscriptNotContinuableError(params.error) ||
+        isLikelyContextOverflowError(formatErrorMessage(params.error))))
   );
 }
