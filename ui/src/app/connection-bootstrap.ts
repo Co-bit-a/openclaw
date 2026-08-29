@@ -41,22 +41,19 @@ export function createConnectionBootstrapCoordinator(): ConnectionBootstrapCoord
         return;
       }
       active += 1;
-      let work: Promise<unknown>;
-      try {
-        work = task.run();
-      } catch (error) {
-        work = Promise.reject(error instanceof Error ? error : new Error(String(error)));
-      }
       const finish = () => {
         if (task.generation === generation) {
           tasks.delete(task.key);
         }
         task.resolve();
       };
-      void work.then(finish, finish).finally(() => {
-        active -= 1;
-        drain();
-      });
+      void task
+        .run()
+        .then(finish, finish)
+        .finally(() => {
+          active -= 1;
+          drain();
+        });
     }
   };
 

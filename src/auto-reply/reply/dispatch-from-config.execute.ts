@@ -35,6 +35,7 @@ import { REPLY_OPERATION_RUN_STATE } from "./reply-operation-run-state.js";
 export async function executeDispatch(state: PrepareDispatchExecutionReadyState) {
   const {
     cfg,
+    cleanBlockTtsDirectiveText,
     commentaryPayloadsEnabled,
     ctx,
     deliveryChannel,
