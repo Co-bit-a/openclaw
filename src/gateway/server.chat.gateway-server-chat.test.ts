@@ -315,6 +315,54 @@ describe("gateway server chat", () => {
     });
   });
 
+  test("chat.send keeps admitted settings after the session row broadens", async () => {
+    await withMainSessionStore(async () => {
+      const dispatchEntered = createDeferred<InternalGetReplyOptions | undefined>();
+      const releaseDispatch = createDeferred<void>();
+      dispatchInboundMessageMock.mockImplementationOnce(async (args: unknown) => {
+        const params = args as { replyOptions?: InternalGetReplyOptions };
+        dispatchEntered.resolve(params.replyOptions);
+        await releaseDispatch.promise;
+        return { queuedFinal: false, counts: { tool: 0, block: 0, final: 0 } };
+      });
+      expect(
+        (
+          await rpcReq(ws, "sessions.patch", {
+            key: "main",
+            permissionMode: "guarded",
+            toolOverrides: { webSearch: false },
+          })
+        ).ok,
+      ).toBe(true);
+
+      const accepted = await rpcReq(ws, "chat.send", {
+        sessionKey: "main",
+        message: "keep admitted authority",
+        expectedPermissionMode: "guarded",
+        expectedToolOverrides: { webSearch: false },
+        idempotencyKey: "idem-chat-settings-final-freeze",
+      });
+      expect(accepted.ok).toBe(true);
+      const admittedOptions = await dispatchEntered.promise;
+
+      expect(
+        (
+          await rpcReq(ws, "sessions.patch", {
+            key: "main",
+            permissionMode: "full",
+            toolOverrides: null,
+          })
+        ).ok,
+      ).toBe(true);
+      expect(admittedOptions?.admittedSessionSettings).toEqual({
+        permissionMode: "guarded",
+        toolOverrides: { webSearch: false },
+      });
+      releaseDispatch.resolve();
+      await waitForAgentRunDrained("idem-chat-settings-final-freeze");
+    });
+  });
+
   test("keeps started chat dispatch on its retained request root", async () => {
     await withMainSessionStore(async () => {
       let subordinateAdmissionClosed: boolean | undefined;

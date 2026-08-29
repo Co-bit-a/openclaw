@@ -26,7 +26,10 @@ import { setGatewayDedupeEntry } from "../agent-turn/agent-job.js";
 import { registerChatAbortController, resolveChatRunExpiresAtMs } from "../chat-abort.js";
 import { authorizeGatewaySessionCreation, resolveCreatorSandbox } from "../operator-role-policy.js";
 import { PENDING_CHAT_SEND_DEDUPE_PREFIX, type DedupeEntry } from "../server-shared.js";
-import { sessionToolOverridesEqual } from "../session-tool-overrides.js";
+import {
+  normalizeSessionToolOverrides,
+  sessionToolOverridesEqual,
+} from "../session-tool-overrides.js";
 import { loadSessionEntry } from "../session-utils.js";
 import { formatForLog } from "../ws-log.js";
 import {
@@ -174,6 +177,9 @@ export async function admitChatSend(params: {
   let admittedRunAbort: ReturnType<typeof registerChatAbortController> | undefined;
   let restartSafeAdmission: ReturnType<typeof resolveRestartSafeChatAdmission>;
   let initialSessionEntry: SessionEntry | undefined;
+  let admittedSessionSettings:
+    | Readonly<Pick<SessionEntry, "permissionMode" | "toolOverrides">>
+    | undefined;
   let messageInjectionTarget: ReturnType<
     typeof replyRunRegistry.resolveCurrentMessageInjectionTarget
   >;
@@ -245,6 +251,18 @@ export async function admitChatSend(params: {
         !sessionToolOverridesEqual(latestEntry?.toolOverrides, p.expectedToolOverrides));
     if (settingsChanged) {
       throw new Error(SESSION_SETTINGS_CHANGED_ERROR_REASON);
+    }
+    if (
+      commitOutcome &&
+      (p.expectedPermissionMode !== undefined || p.expectedToolOverrides !== undefined)
+    ) {
+      // Freeze the writer-barrier snapshot. Later reply preparation may reload
+      // the session after awaited workspace/media work, but this run must keep
+      // the authority under which it was admitted.
+      admittedSessionSettings = Object.freeze({
+        permissionMode: latestEntry?.permissionMode,
+        toolOverrides: normalizeSessionToolOverrides(latestEntry?.toolOverrides),
+      });
     }
     if (
       request.goalOperation &&
@@ -656,6 +674,7 @@ export async function admitChatSend(params: {
     ok: true as const,
     value: {
       activeRunAbort,
+      admittedSessionSettings,
       admittedSessionId,
       initialSessionEntry,
       chatSendTraceAttributes,
