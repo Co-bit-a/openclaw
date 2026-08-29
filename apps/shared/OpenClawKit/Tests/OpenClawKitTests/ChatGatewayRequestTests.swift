@@ -221,22 +221,14 @@ struct ChatGatewayRequestTests {
             sessionKey: "global",
             agentID: "reviewer",
             expectedSessionID: "sess-global",
-            expectedPermissionMode: .some(.guarded),
-            expectedToolOverrides: .some(OpenClawChatSessionToolOverrides(webSearch: false)),
             permissionMode: .some(.workspace),
             toolOverrides: .some(overrides),
-            supportsSessionSettingsContract: true,
-            supportsSessionSettingsCAS: true)
+            supportsSessionSettingsContract: true)
 
         #expect(request.params["expectedSessionId"]?.value as? String == "sess-global")
-        #expect(request.params["expectedPermissionMode"]?.value as? String == "guarded")
         #expect(request.params["permissionMode"]?.value as? String == "workspace")
         let encoded = try JSONEncoder().encode(request.params["toolOverrides"])
         let value = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        let expectedEncoded = try JSONEncoder().encode(request.params["expectedToolOverrides"])
-        let expectedValue = try #require(
-            JSONSerialization.jsonObject(with: expectedEncoded) as? [String: Any])
-        #expect(expectedValue["webSearch"] as? Bool == false)
         #expect(value["webSearch"] as? Bool == false)
         #expect((value["skills"] as? [String: Bool])?["release"] == false)
         #expect((value["mcpServers"] as? [String: Bool])?["github"] == true)
@@ -248,28 +240,19 @@ struct ChatGatewayRequestTests {
         let reset = OpenClawChatGatewayRequests.patchSessionSettings(
             sessionKey: "global",
             agentID: "reviewer",
-            expectedPermissionMode: .some(.workspace),
-            expectedToolOverrides: .some(nil),
             permissionMode: .some(nil),
             toolOverrides: .some(nil),
-            supportsSessionSettingsContract: true,
-            supportsSessionSettingsCAS: true)
+            supportsSessionSettingsContract: true)
         #expect(reset.params["permissionMode"]?.value is NSNull)
-        #expect(reset.params["expectedPermissionMode"]?.value as? String == "workspace")
-        #expect(reset.params["expectedToolOverrides"]?.value is NSNull)
         #expect(reset.params["toolOverrides"]?.value is NSNull)
 
         let releasedGateway = OpenClawChatGatewayRequests.patchSessionSettings(
             sessionKey: "global",
             agentID: "reviewer",
             expectedSessionID: "sess-global",
-            expectedPermissionMode: .some(nil),
-            expectedToolOverrides: .some(nil),
             permissionMode: .some(.workspace),
             toolOverrides: .some(overrides))
         #expect(releasedGateway.params["expectedSessionId"] == nil)
-        #expect(releasedGateway.params["expectedPermissionMode"] == nil)
-        #expect(releasedGateway.params["expectedToolOverrides"] == nil)
         #expect(releasedGateway.params["permissionMode"] == nil)
         #expect(releasedGateway.params["toolOverrides"] == nil)
     }
@@ -464,25 +447,25 @@ struct ChatGatewayRequestTests {
             sessionKey: "global",
             agentID: " reviewer ",
             expectedSessionRoutingContract: " per-sender|main|reviewer ",
-            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(
-                permissionMode: .guarded,
-                toolOverrides: OpenClawChatSessionToolOverrides(webSearch: false)),
-            supportsSessionSettingsCAS: true,
             message: "hello",
             thinking: " low ",
             idempotencyKey: "send-1",
-            attachments: [.init(type: "image", mimeType: "image/png", fileName: "a.png", content: "abc")])
+            attachments: [.init(type: "image", mimeType: "image/png", fileName: "a.png", content: "abc")],
+            sessionID: " session-1 ",
+            queueMode: .steer,
+            replyToID: " reply-1 ",
+            expectedLeaf: .entry(" leaf-1 "),
+            supportsSendContextContract: true)
 
         #expect(request.method == "chat.send")
         #expect(request.timeoutMs == 30000)
         #expect(request.params["agentId"]?.value as? String == "reviewer")
         #expect(request.params["expectedSessionRoutingContract"]?.value as? String == "per-sender|main|reviewer")
-        #expect(request.params["expectedPermissionMode"]?.value as? String == "guarded")
-        let expectedTools = try JSONEncoder().encode(request.params["expectedToolOverrides"])
-        let expectedToolsValue = try #require(
-            JSONSerialization.jsonObject(with: expectedTools) as? [String: Any])
-        #expect(expectedToolsValue["webSearch"] as? Bool == false)
         #expect(request.params["thinking"]?.value as? String == "low")
+        #expect(request.params["sessionId"]?.value as? String == "session-1")
+        #expect(request.params["queueMode"]?.value as? String == "steer")
+        #expect(request.params["replyToId"]?.value as? String == "reply-1")
+        #expect(request.params["expectedLeafEntryId"]?.value as? String == "leaf-1")
         #expect(request.params["timeoutMs"] == nil)
         let encoded = try JSONEncoder().encode(request.params["attachments"])
         let json = try #require(String(bytes: encoded, encoding: .utf8))
@@ -494,16 +477,38 @@ struct ChatGatewayRequestTests {
             sessionKey: "global",
             agentID: nil,
             expectedSessionRoutingContract: nil,
-            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(
-                permissionMode: nil,
-                toolOverrides: nil),
             message: "inherit",
             thinking: nil,
             idempotencyKey: "send-inherit",
-            attachments: [])
+            attachments: [],
+            expectedLeaf: .empty)
         #expect(inherited.params["thinking"] == nil)
-        #expect(inherited.params["expectedPermissionMode"] == nil)
-        #expect(inherited.params["expectedToolOverrides"] == nil)
+        #expect(inherited.params["sessionId"] == nil)
+        #expect(inherited.params["queueMode"] == nil)
+        #expect(inherited.params["replyToId"] == nil)
+        #expect(inherited.params["expectedLeafEntryId"] == nil)
+
+        let supported = OpenClawChatGatewayRequests.sendMessage(
+            sessionKey: "global",
+            agentID: nil,
+            expectedSessionRoutingContract: nil,
+            message: "follow up",
+            thinking: nil,
+            idempotencyKey: "send-follow-up",
+            attachments: [],
+            expectedLeaf: .empty,
+            supportsSendContextContract: true)
+        #expect(supported.params["expectedLeafEntryId"]?.value is NSNull)
+    }
+
+    @Test func `unknown queue policy does not reject history payload`() throws {
+        let data = Data(#"{"sessionKey":"main","sessionId":"session-1","messages":[],"sessionInfo":{"hasActiveRun":true,"effectiveQueueMode":"future-mode"}}"#.utf8)
+
+        let payload = try JSONDecoder().decode(OpenClawChatHistoryPayload.self, from: data)
+
+        #expect(payload.sessionId == "session-1")
+        #expect(payload.sessionInfo?.hasActiveRun == true)
+        #expect(payload.sessionInfo?.effectiveQueueMode == nil)
     }
 
     @Test func `question resolve request preserves answer arrays`() throws {

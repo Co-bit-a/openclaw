@@ -162,6 +162,10 @@ public struct OpenClawChatOutboxCommand: Hashable, Sendable, Identifiable {
     public let branchEpoch: Int
     /// Scope epoch observed alongside this row snapshot.
     public let scopeBranchEpoch: Int?
+    /// Raw model input used when the gateway supports structured chat.send context.
+    /// `text` remains the portable fallback and optimistic presentation text.
+    public let structuredMessageText: String?
+    public let sendContext: OpenClawChatSendContext?
     public let text: String
     /// Attachment bytes remain owned by SQLite until canonical history proves
     /// delivery or the user explicitly deletes the command.
@@ -189,6 +193,8 @@ public struct OpenClawChatOutboxCommand: Hashable, Sendable, Identifiable {
         agentID: String? = nil,
         branchEpoch: Int = 0,
         scopeBranchEpoch: Int? = nil,
+        structuredMessageText: String? = nil,
+        sendContext: OpenClawChatSendContext? = nil,
         text: String,
         attachments: [OpenClawChatOutboxAttachment] = [],
         thinking: String,
@@ -212,6 +218,8 @@ public struct OpenClawChatOutboxCommand: Hashable, Sendable, Identifiable {
         self.agentID = normalizedAgentID?.isEmpty == false ? normalizedAgentID : nil
         self.branchEpoch = branchEpoch
         self.scopeBranchEpoch = scopeBranchEpoch ?? branchEpoch
+        self.structuredMessageText = structuredMessageText
+        self.sendContext = sendContext
         self.text = text
         self.attachments = attachments
         self.thinking = thinking
@@ -229,6 +237,7 @@ public enum OpenClawChatOutboxUpdateResult: Equatable, Sendable {
     case confirmed
     case missing
     case superseded
+    case nonRetryable(reason: String?)
     case unavailable
 }
 

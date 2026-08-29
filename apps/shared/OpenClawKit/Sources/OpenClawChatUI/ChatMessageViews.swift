@@ -956,6 +956,10 @@ struct ChatOutboxStatusLabel: View {
             "Confirming…"
         case let .failed(reason) where reason == OpenClawChatSQLiteTranscriptCache.outboxUnconfirmedError:
             "Delivery unknown"
+        case let .failed(reason) where reason == OpenClawChatSQLiteTranscriptCache.outboxChangedSessionError:
+            "Copy and resend"
+        case let .failed(reason) where reason == OpenClawChatSQLiteTranscriptCache.outboxClientUpgradeRequiredError:
+            "Update required"
         case .failed:
             "Not sent"
         }
@@ -986,6 +990,10 @@ struct ChatOutboxStatusLabel: View {
             "Sent, waiting for chat history confirmation"
         case let .failed(reason) where reason == OpenClawChatSQLiteTranscriptCache.outboxUnconfirmedError:
             "Delivery unconfirmed, touch and hold to retry or delete"
+        case let .failed(reason) where reason == OpenClawChatSQLiteTranscriptCache.outboxChangedSessionError:
+            "Session changed, touch and hold to copy this message and send it again"
+        case let .failed(reason) where reason == OpenClawChatSQLiteTranscriptCache.outboxClientUpgradeRequiredError:
+            "Update OpenClaw, then touch and hold to copy this message and send it again"
         case .failed:
             "Not sent, touch and hold to retry or delete"
         }

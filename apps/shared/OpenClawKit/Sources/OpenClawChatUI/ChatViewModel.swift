@@ -119,6 +119,9 @@ public final class OpenClawChatViewModel {
     }
 
     public internal(set) var sessionId: String?
+    public internal(set) var displayedLeafExpectation: OpenClawChatLeafExpectation = .unavailable
+    public internal(set) var effectiveQueueMode: OpenClawChatQueueMode?
+    var activityPreservingFollowUpRunIDs: Set<String> = []
     public private(set) var streamingAssistantText: String?
 
     public private(set) var pendingToolCalls: [OpenClawChatPendingToolCall] = []
@@ -900,6 +903,8 @@ extension OpenClawChatViewModel {
         self.updateStreamingAssistantText(nil)
         self.updateActiveSessionRunWithoutChatSnapshot(false)
         self.sessionId = nil
+        self.displayedLeafExpectation = .unavailable
+        self.effectiveQueueMode = nil
         let historyRequest = self.beginHistoryRequest(captureLatestUserTurn: requestedSessionKey == nil)
         let context = BootstrapContext(
             id: bootstrapGeneration,
@@ -1263,6 +1268,8 @@ extension OpenClawChatViewModel {
         self.provisionalFinalMessagesByID.removeAll()
         resetOutboxPresentationForSessionSwitch()
         self.sessionId = nil
+        self.displayedLeafExpectation = .unavailable
+        self.effectiveQueueMode = nil
         self.pendingToolCallsById = [:]
         self.clearSubagentActivities()
         self.updateStreamingAssistantText(nil)

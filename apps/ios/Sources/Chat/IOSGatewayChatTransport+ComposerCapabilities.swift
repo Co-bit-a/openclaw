@@ -2,11 +2,20 @@ import Foundation
 import OpenClawChatUI
 import OpenClawKit
 import OpenClawProtocol
-import OSLog
 
 extension IOSGatewayChatTransport {
     var supportsComposerCapabilities: Bool {
         true
+    }
+
+    func loadStructuredSendContextAvailability(
+        sessionKey _: String,
+        agentID _: String?) async -> Bool?
+    {
+        guard let route = await self.currentSessionMutationRoute() else { return false }
+        return await self.gateway.supportsServerCapability(
+            .chatSendContextContract,
+            ifCurrentRoute: route) == true
     }
 
     func loadComposerCapabilityCatalog(
@@ -20,7 +29,12 @@ extension IOSGatewayChatTransport {
         async let patchMethodAdvertised = self.gateway.supportsServerMethod(
             "sessions.patch",
             ifCurrentRoute: route)
-        async let settingsSupportRequest = self.sessionSettingsSupport(ifCurrentRoute: route)
+        async let sendContextCapability = self.gateway.supportsServerCapability(
+            .chatSendContextContract,
+            ifCurrentRoute: route)
+        async let settingsCapability = self.gateway.supportsServerCapability(
+            .sessionSettingsContract,
+            ifCurrentRoute: route)
         let scopes = await operatorScopes ?? []
         let canAdmin = scopes.contains("operator.admin")
         let canWrite = canAdmin || scopes.contains("operator.write")
@@ -50,14 +64,17 @@ extension IOSGatewayChatTransport {
             skillsResponse,
             toolsResponse,
             patchCapability,
-            settingsSupport) = await (
+            sendContextAvailable,
+            settingsAvailable) = await (
             configRequest,
             skillsRequest,
             toolsRequest,
             patchMethodAdvertised,
-            settingsSupportRequest)
+            sendContextCapability,
+            settingsCapability)
         let patchAdvertised = patchCapability == true
-        let sessionSettingsAvailable = settingsSupport.settingsContract && patchAdvertised
+        let structuredSendAvailable = sendContextAvailable == true
+        let sessionSettingsAvailable = settingsAvailable == true && patchAdvertised
 
         guard await self.gateway.currentRoute() == route else {
             return OpenClawChatComposerCapabilityCatalog()
@@ -84,6 +101,7 @@ extension IOSGatewayChatTransport {
                 failedSurfaces.joined(separator: ", "))
 
         return OpenClawChatComposerCapabilityCatalog(
+            structuredSendAvailable: structuredSendAvailable,
             sessionSettingsAvailable: sessionSettingsAvailable,
             modelMutationAvailable: Self.composerMutationAvailable(
                 methodSupport: patchCapability,
@@ -104,30 +122,10 @@ extension IOSGatewayChatTransport {
             skillsAvailable: skillsSurface.loaded,
             connectorsAvailable: configSurface.loaded,
             toolAccessAvailable: toolsSurface.loaded,
-            permissionMutationAvailable: sessionSettingsAvailable && settingsSupport.settingsCAS &&
-                patchAdvertised && canWrite,
-            sessionSettingsCASAvailable: settingsSupport.settingsCAS,
-            toolOverrideMutationAvailable: sessionSettingsAvailable && patchAdvertised &&
-                settingsSupport.settingsCAS && canAdmin,
-            toolOverrideMutationRequiresGatewayUpgrade: sessionSettingsAvailable &&
-                !settingsSupport.settingsCAS,
-            canSelectFullPermission: sessionSettingsAvailable && settingsSupport.settingsCAS &&
-                patchAdvertised && canAdmin,
+            permissionMutationAvailable: sessionSettingsAvailable && patchAdvertised && canWrite,
+            toolOverrideMutationAvailable: sessionSettingsAvailable && patchAdvertised && canAdmin,
+            canSelectFullPermission: sessionSettingsAvailable && patchAdvertised && canAdmin,
             loadFailureMessage: failureMessage)
-    }
-
-    func sessionSettingsSupport(
-        ifCurrentRoute route: GatewayNodeSessionRoute) async -> (
-        settingsContract: Bool,
-        settingsCAS: Bool)
-    {
-        async let settingsContract = self.gateway.supportsServerCapability(
-            .sessionSettingsContract,
-            ifCurrentRoute: route)
-        async let settingsCAS = self.gateway.supportsServerCapability(
-            .sessionSettingsCAS,
-            ifCurrentRoute: route)
-        return await (settingsContract == true, settingsCAS == true)
     }
 
     static func composerMutationAvailable(methodSupport: Bool?, allowedByScope: Bool) -> Bool {
@@ -222,136 +220,6 @@ extension IOSGatewayChatTransport {
             }
         }
         return notices
-    }
-
-    func sendMessage(
-        sessionKey: String,
-        message: String,
-        thinking: String,
-        idempotencyKey: String,
-        attachments: [OpenClawChatAttachmentPayload]) async throws -> OpenClawChatSendResponse
-    {
-        try await self.sendMessage(
-            sessionKey: sessionKey,
-            agentID: nil,
-            message: message,
-            thinking: thinking,
-            idempotencyKey: idempotencyKey,
-            attachments: attachments,
-            ifCurrentRoute: nil)
-    }
-
-    func sendMessage(
-        sessionKey: String,
-        agentID: String?,
-        expectedSessionRoutingContract: String?,
-        message: String,
-        thinking: String,
-        idempotencyKey: String,
-        attachments: [OpenClawChatAttachmentPayload]) async throws -> OpenClawChatSendResponse
-    {
-        try await self.sendMessage(
-            sessionKey: sessionKey,
-            target: OpenClawChatSendTarget(
-                agentID: agentID,
-                expectedSessionRoutingContract: expectedSessionRoutingContract,
-                expectedSessionSettings: nil),
-            message: message,
-            thinking: thinking,
-            idempotencyKey: idempotencyKey,
-            attachments: attachments)
-    }
-
-    func sendMessage(
-        sessionKey: String,
-        target: OpenClawChatSendTarget,
-        message: String,
-        thinking: String,
-        idempotencyKey: String,
-        attachments: [OpenClawChatAttachmentPayload]) async throws -> OpenClawChatSendResponse
-    {
-        let route: GatewayNodeSessionRoute? = if let outboxGatewayID {
-            await self.gateway.currentRoute(ifGatewayID: outboxGatewayID)
-        } else {
-            await self.gateway.currentRoute()
-        }
-        guard let route,
-              let supportsRoutingContract = await gateway.supportsServerCapability(
-                  .chatSendRoutingContract,
-                  ifCurrentRoute: route)
-        else { throw OpenClawChatTransportSendError.notDispatched }
-        let guardedContract = OpenClawChatSessionRoutingContract.expectedValue(
-            target.expectedSessionRoutingContract,
-            serverSupportsGuard: supportsRoutingContract)
-        return try await self.sendMessage(
-            sessionKey: sessionKey,
-            agentID: target.agentID,
-            expectedSessionRoutingContract: guardedContract,
-            expectedSessionSettings: target.expectedSessionSettings,
-            message: message,
-            thinking: thinking,
-            idempotencyKey: idempotencyKey,
-            attachments: attachments,
-            ifCurrentRoute: route,
-            distinguishPreDispatchRouteChange: true)
-    }
-
-    func sendMessage(
-        sessionKey: String,
-        agentID: String? = nil,
-        expectedSessionRoutingContract: String? = nil,
-        expectedSessionSettings: OpenClawChatSessionSettingsExpectation? = nil,
-        message: String,
-        thinking: String?,
-        idempotencyKey: String,
-        attachments: [OpenClawChatAttachmentPayload],
-        ifCurrentRoute expectedRoute: GatewayNodeSessionRoute?,
-        distinguishPreDispatchRouteChange: Bool = false) async throws -> OpenClawChatSendResponse
-    {
-        let supportsSettingsCAS = if let expectedRoute {
-            await self.gateway.supportsServerCapability(
-                .sessionSettingsCAS,
-                ifCurrentRoute: expectedRoute) == true
-        } else {
-            false
-        }
-        guard expectedSessionSettings == nil || supportsSettingsCAS else {
-            throw OpenClawChatTransportSendError.notDispatched
-        }
-        let target = self.sessionTarget(for: sessionKey, overrideAgentID: agentID)
-        let startLogMessage =
-            "chat.send start sessionKey=\(target.sessionKey) "
-                + "len=\(message.count) attachments=\(attachments.count)"
-        Self.logger.info("\(startLogMessage, privacy: .public)")
-        GatewayDiagnostics.log(startLogMessage)
-        let request = OpenClawChatGatewayRequests.sendMessage(
-            sessionKey: target.sessionKey,
-            agentID: target.agentID,
-            expectedSessionRoutingContract: expectedSessionRoutingContract,
-            expectedSessionSettings: expectedSessionSettings,
-            supportsSessionSettingsCAS: supportsSettingsCAS,
-            message: message,
-            thinking: thinking,
-            idempotencyKey: idempotencyKey,
-            attachments: attachments)
-        do {
-            let res = try await gateway.request(
-                request,
-                ifCurrentRoute: expectedRoute,
-                distinguishPreDispatchRouteChange: distinguishPreDispatchRouteChange)
-            let decoded = try JSONDecoder().decode(OpenClawChatSendResponse.self, from: res)
-            Self.logger.info("chat.send ok runId=\(decoded.runId, privacy: .public)")
-            GatewayDiagnostics.log("chat.send ok runId=\(decoded.runId) status=\(decoded.status)")
-            return decoded
-        } catch is GatewayNodeSessionRequestError {
-            Self.logger.info("chat.send skipped because the captured route changed before dispatch")
-            GatewayDiagnostics.log("chat.send skipped before dispatch: route changed")
-            throw OpenClawChatTransportSendError.notDispatched
-        } catch {
-            Self.logger.error("chat.send failed \(error.localizedDescription, privacy: .public)")
-            GatewayDiagnostics.log("chat.send failed error=\(error.localizedDescription)")
-            throw error
-        }
     }
 }
 

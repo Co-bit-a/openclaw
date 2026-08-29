@@ -26,7 +26,17 @@ extension OpenClawChatComposer {
     }
 
     var sendButtonAccessibilityLabel: String {
-        "Send message"
+        guard self.viewModel.hasActiveRunForFollowUp else { return "Send message" }
+        switch self.viewModel.activeFollowUpMode {
+        case .steer:
+            return "Steer response"
+        case .followup, .collect:
+            return "Queue follow-up"
+        case .interrupt:
+            return "Interrupt and send"
+        case nil:
+            return "Send follow-up"
+        }
     }
 
     #if os(iOS)
@@ -163,7 +173,7 @@ extension OpenClawChatComposer {
             !self.viewModel.showsModelPicker ||
                 !self.viewModel.composerModelMutationAvailable ||
                 self.viewModel.isUpdatingSessionSettings ||
-                self.viewModel.hasActiveRunForComposerSettings)
+                self.viewModel.hasActiveRunForFollowUp)
         .accessibilityLabel("Model")
         .accessibilityValue(self.viewModel.composerInlineModelLabel)
         .accessibilityHint(self.cleanInlineModelDisabledHint ?? "")
@@ -250,7 +260,7 @@ extension OpenClawChatComposer {
         .disabled(
             !self.viewModel.composerEffortMutationAvailable ||
                 self.viewModel.isUpdatingSessionSettings ||
-                self.viewModel.hasActiveRunForComposerSettings)
+                self.viewModel.hasActiveRunForFollowUp)
         .accessibilityLabel("Effort")
         .accessibilityValue(self.viewModel.composerInlineEffortLabel)
         .accessibilityHint(self.cleanInlineEffortDisabledHint ?? "")
@@ -258,7 +268,7 @@ extension OpenClawChatComposer {
     }
 
     private var cleanInlineModelDisabledHint: String? {
-        if self.viewModel.hasActiveRunForComposerSettings {
+        if self.viewModel.hasActiveRunForFollowUp {
             return String(localized: "Available after the current response finishes.")
         }
         if !self.viewModel.composerModelMutationAvailable {
@@ -271,7 +281,7 @@ extension OpenClawChatComposer {
     }
 
     private var cleanInlineEffortDisabledHint: String? {
-        if self.viewModel.hasActiveRunForComposerSettings {
+        if self.viewModel.hasActiveRunForFollowUp {
             return String(localized: "Available after the current response finishes.")
         }
         if !self.viewModel.composerEffortMutationAvailable {

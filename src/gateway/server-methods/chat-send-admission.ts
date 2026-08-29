@@ -275,6 +275,16 @@ export async function admitChatSend(params: {
     if (entry && !latestEntry) {
       throw new Error(`Session "${sessionKey}" was deleted while starting work. Retry.`);
     }
+    // A supplied session id fences the exact transcript generation for every
+    // queue mode. Without this check, stale steer input can target a successor.
+    if (
+      commitOutcome &&
+      requestedSessionId !== undefined &&
+      latestEntry?.sessionId !== undefined &&
+      requestedSessionId !== latestEntry?.sessionId
+    ) {
+      throw new Error(ACTIVE_LEAF_CHANGED_ERROR_REASON);
+    }
     // Capture the exact direct owner under the writer barrier. If it clears
     // later, the opaque target rejects instead of resolving a successor.
     const resolvedInjectionTarget =
@@ -308,14 +318,10 @@ export async function admitChatSend(params: {
         : expectedLeafEntryId === null
           ? "exact"
           : "off-path";
-      // Branch switches preserve entry ids while rotating session ids. A supplied session id
-      // must fence exact and ancestor matches; omission remains legacy exact-only compatibility.
-      const matchesRequestedSession =
-        requestedSessionId === undefined || requestedSessionId === latestEntry?.sessionId;
       const matchesActivePath =
         activePathRelation === "exact" ||
         (activePathRelation === "ancestor" && requestedSessionId !== undefined);
-      if (!matchesRequestedSession || !matchesActivePath) {
+      if (!matchesActivePath) {
         throw new Error(ACTIVE_LEAF_CHANGED_ERROR_REASON);
       }
     }
