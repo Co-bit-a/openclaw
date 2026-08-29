@@ -1136,11 +1136,40 @@ final class ChatCommandOutboxStoreTests: ClientDatabaseTestSuite, @unchecked Sen
         #expect(await reopened.store(gatewayID: "gw-a").loadCommands().first?.expectedSessionSettings == expectation)
     }
 
-    @Test func `downgraded reader cannot claim a settings fenced row`() async throws {
+    @Test func `pre v7 upgrade reopens and fences a settings bound retry`() async throws {
+        try databases.close()
+        let stateURL = directory.appendingPathComponent("client-state.sqlite")
+        try withRawDatabase(at: stateURL) { raw in
+            execute(raw, """
+            DROP TRIGGER outbox_settings_claim_guard;
+            DROP TRIGGER outbox_settings_retry_guard;
+            ALTER TABLE outbox_commands DROP COLUMN settings_retry_authorization;
+            ALTER TABLE outbox_commands DROP COLUMN expected_settings_json;
+            DELETE FROM grdb_migrations WHERE identifier IN (
+                'client-state-outbox-settings-expectation-v7',
+                'client-state-outbox-settings-claim-v8'
+            );
+            INSERT INTO outbox_commands(
+                gateway_id, client_uuid, session_key, delivery_session_key,
+                routing_contract, agent_id, text, thinking, created_at, status
+            ) VALUES (
+                'gw-a', 'pre-v7-preserved', 'main', 'agent:main:main',
+                'per-sender|main|main', 'main', 'preserve across upgrade', 'off', 1, 'queued'
+            );
+            """)
+        }
+
+        let upgraded = try OpenClawClientDatabases(directoryURL: directory)
+        let upgradedStore = upgraded.store(gatewayID: "gw-a")
+        let preserved = try #require(await upgradedStore.loadCommands().first(where: {
+            $0.id == "pre-v7-preserved"
+        }))
+        #expect(preserved.text == "preserve across upgrade")
+        #expect(preserved.expectedSessionSettings == nil)
         let expectation = OpenClawChatSessionSettingsExpectation(
             permissionMode: .readOnly,
             toolOverrides: OpenClawChatSessionToolOverrides(webSearch: false))
-        #expect(await store.enqueueCommand(OpenClawChatOutboxCommand(
+        #expect(await upgradedStore.enqueueCommand(OpenClawChatOutboxCommand(
             id: "legacy-writer-settings",
             sessionKey: "main",
             deliverySessionKey: "agent:main:main",
@@ -1153,17 +1182,21 @@ final class ChatCommandOutboxStoreTests: ClientDatabaseTestSuite, @unchecked Sen
             status: .queued,
             retryCount: 0,
             lastError: nil)))
-        try databases.close()
-        try withRawDatabase(at: directory.appendingPathComponent("client-state.sqlite")) { raw in
+        try upgraded.close()
+
+        try withRawDatabase(at: stateURL) { raw in
             execute(raw, """
             UPDATE outbox_commands
-            SET status = 'sending';
+            SET status = 'sending'
+            WHERE client_uuid = 'legacy-writer-settings';
             """)
         }
 
         let reopened = try OpenClawClientDatabases(directoryURL: directory)
         let reopenedStore = reopened.store(gatewayID: "gw-a")
-        let failed = try #require(await reopenedStore.loadCommands().first)
+        let failed = try #require(await reopenedStore.loadCommands().first(where: {
+            $0.id == "legacy-writer-settings"
+        }))
         #expect(failed.status == .failed)
         #expect(failed.lastError == OpenClawChatSQLiteTranscriptCache.outboxSettingsUpgradeRequiredError)
         #expect(failed.expectedSessionSettings == expectation)
@@ -1175,7 +1208,14 @@ final class ChatCommandOutboxStoreTests: ClientDatabaseTestSuite, @unchecked Sen
             routingContract: "per-sender|main|main",
             expectedSessionSettings: expectation,
             replacementID: nil) == .updated)
-        #expect(await reopenedStore.loadCommands().first?.expectedSessionSettings == expectation)
+        try reopened.close()
+
+        let retried = try OpenClawClientDatabases(directoryURL: directory)
+        let retriedCommand = try #require(await retried.store(gatewayID: "gw-a").loadCommands().first(where: {
+            $0.id == "legacy-writer-settings"
+        }))
+        #expect(retriedCommand.status == .queued)
+        #expect(retriedCommand.expectedSessionSettings == expectation)
     }
 
     @Test func `nil agent rows use the canonical empty scope owner`() async throws {
