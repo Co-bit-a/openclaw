@@ -1023,6 +1023,11 @@ extension OpenClawChatViewModel {
         outbox: any OpenClawChatCommandOutbox,
         routeLease: OpenClawChatTransportRouteLease) async -> OutboxFlushDisposition
     {
+        if command.sendContext?.requiresStructuredDelivery == true,
+           !routeLease.supportsStructuredSendContext
+        {
+            return await self.rejectUnsupportedStructuredCommand(command, outbox: outbox)
+        }
         if let disposition = await self.validateOutboxSessionBeforeDelivery(
             command,
             outbox: outbox,
@@ -1138,6 +1143,28 @@ extension OpenClawChatViewModel {
             outboxLogger.error("outbox flush send failed \(error.localizedDescription, privacy: .public)")
             return await self.stopAfterUnconfirmedDelivery(command, outbox: outbox)
         }
+    }
+
+    private func rejectUnsupportedStructuredCommand(
+        _ command: OpenClawChatOutboxCommand,
+        outbox: any OpenClawChatCommandOutbox) async -> OutboxFlushDisposition
+    {
+        let reason = OpenClawChatSQLiteTranscriptCache.outboxClientUpgradeRequiredError
+        let update = await outbox.markCommandFailedIfPresent(
+            id: command.id,
+            attemptVersion: command.attemptVersion,
+            retryCount: command.retryCount,
+            lastError: reason)
+        guard update != .unavailable else {
+            self.applyTransportHealth(false)
+            return .stop
+        }
+        if update == .updated {
+            self.setOutboxState(.failed(reason: reason), forCommandID: command.id)
+        } else {
+            self.clearOutboxState(forCommandID: command.id)
+        }
+        return .continueFlush
     }
 
     /// Structured context is bound to one physical session incarnation. Read
@@ -1468,6 +1495,13 @@ extension OpenClawChatViewModel {
             // Canonical history owns the message row; only its outbox badge
             // and command mapping disappear.
             self.clearOutboxState(forCommandID: commandID)
+        case let .failed(_, commandID, attemptVersion, retryCount, reason):
+            guard let messageID = self.outboxMessageIDsByCommandID[commandID] else { return }
+            self.outboxStatesByMessageID[messageID] = .failed(reason: reason)
+            self.outboxFailureVersionsByMessageID[messageID] = (
+                attemptVersion,
+                retryCount,
+                reason)
         case let .invalidated(_, scope):
             let session = self.currentSessionSnapshot()
             guard self.outboxBranchScope(for: session) == scope else { return }

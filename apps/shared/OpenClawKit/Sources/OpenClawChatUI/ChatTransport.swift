@@ -288,6 +288,7 @@ public struct OpenClawChatTransportRouteLease: Sendable {
     private let requestTargetedHistoryImpl: RequestTargetedHistory
     public let sessionRoutingContract: String?
     public let supportsSessionSettingsCAS: Bool
+    public let supportsStructuredSendContext: Bool
 
     public init(
         sendMessage: @escaping SendMessage,
@@ -297,6 +298,7 @@ public struct OpenClawChatTransportRouteLease: Sendable {
     {
         self.sessionRoutingContract = sessionRoutingContract
         self.supportsSessionSettingsCAS = supportsSessionSettingsCAS
+        self.supportsStructuredSendContext = false
         self.sendTargetedContextMessageImpl = { sessionKey, context, message, thinking, idempotencyKey, attachments in
             try await sendMessage(
                 sessionKey,
@@ -318,6 +320,7 @@ public struct OpenClawChatTransportRouteLease: Sendable {
     {
         self.sessionRoutingContract = sessionRoutingContract
         self.supportsSessionSettingsCAS = supportsSessionSettingsCAS
+        self.supportsStructuredSendContext = false
         self.sendTargetedContextMessageImpl = { sessionKey, context, message, thinking, idempotencyKey, attachments in
             try await sendTargetedMessage(
                 sessionKey,
@@ -334,10 +337,12 @@ public struct OpenClawChatTransportRouteLease: Sendable {
         sendTargetedContextMessage: @escaping SendTargetedContextMessage,
         requestTargetedHistory: @escaping RequestTargetedHistory,
         sessionRoutingContract: String? = nil,
-        supportsSessionSettingsCAS: Bool = false)
+        supportsSessionSettingsCAS: Bool = false,
+        supportsStructuredSendContext: Bool = true)
     {
         self.sessionRoutingContract = sessionRoutingContract
         self.supportsSessionSettingsCAS = supportsSessionSettingsCAS
+        self.supportsStructuredSendContext = supportsStructuredSendContext
         self.sendTargetedContextMessageImpl = sendTargetedContextMessage
         self.requestTargetedHistoryImpl = requestTargetedHistory
     }

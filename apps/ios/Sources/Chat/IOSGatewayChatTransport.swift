@@ -93,7 +93,8 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
                     ifCurrentRoute: route)
             },
             sessionRoutingContract: routingContract,
-            supportsSessionSettingsCAS: supportsSettingsCAS))
+            supportsSessionSettingsCAS: supportsSettingsCAS,
+            supportsStructuredSendContext: supportsSendContextContract))
     }
 
     func acquireSwarmRouteLease() async -> OpenClawChatSwarmRouteLease? {

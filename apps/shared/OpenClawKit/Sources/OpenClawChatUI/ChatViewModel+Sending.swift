@@ -17,6 +17,7 @@ extension OpenClawChatViewModel {
             self.attachmentStagingCount == 0 &&
             !self.isSwitchingSessionBranch &&
             (!self.hasActiveRunForFollowUp || self.activeFollowUpSendAvailable) &&
+            (self.attachmentDraftSendAllowed || self.attachments.isEmpty) &&
             self.hasDraftToSend
     }
 
@@ -32,6 +33,10 @@ extension OpenClawChatViewModel {
     var hasActiveRunForFollowUp: Bool {
         pendingRunCount > 0 || self.hasAdvertisedLiveRun ||
             self.hasActiveSessionRunWithoutChatSnapshot
+    }
+
+    var attachmentDraftSendAllowed: Bool {
+        !self.hasActiveRunForFollowUp
     }
 
     var activeFollowUpMode: OpenClawChatQueueMode? {
@@ -467,6 +472,11 @@ extension OpenClawChatViewModel {
         }
         let input = self.input
         let attachments = self.attachments
+        guard self.attachmentDraftSendAllowed || attachments.isEmpty else {
+            self.errorText = "Send attachments after the active response finishes."
+            self.logDiagnostic("chat.ui send ignored reason=active-follow-up-attachments sessionKey=\(sessionKey)")
+            return nil
+        }
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else {
             logDiagnostic("chat.ui send ignored reason=empty sessionKey=\(sessionKey)")
@@ -547,10 +557,6 @@ extension OpenClawChatViewModel {
 
         let mustPreserveOutboxOrder = self.hasPendingOutboxCommandsForCurrentSession
         if draft.isActiveFollowUp {
-            guard draft.attachments.isEmpty else {
-                errorText = "Send attachments after the active response finishes."
-                return false
-            }
             guard !mustPreserveOutboxOrder else {
                 errorText = "Queued messages are still being restored or delivered. Try this follow-up again shortly."
                 return false

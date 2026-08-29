@@ -1,5 +1,26 @@
 import Foundation
 
+extension OpenClawChatSQLiteTranscriptCache {
+    public static let maxCachedMessagesPerSession = 200
+    public static let maxQueuedCommands = 50
+    public static let maxAttachmentBytesPerCommand = 40_000_000
+    public static let maxQueuedAttachmentBytes = 50_000_000
+    public static let outboxCommandMaxAge: TimeInterval = 48 * 60 * 60
+    public static let outboxExpiredError = "expired"
+    public static let outboxUnconfirmedError = "delivery_unconfirmed"
+    public static let outboxUnknownTargetError = "delivery_target_unknown"
+    public static let outboxChangedTargetError = "delivery_target_changed"
+    public static let outboxChangedSessionError = "delivery_session_changed"
+    public static let outboxClientUpgradeRequiredError = "client_upgrade_required"
+
+    static func outboxDisplayError(_ lastError: String?) -> String? {
+        guard let lastError,
+              let marker = lastError.range(of: "\n# branch-park:")
+        else { return lastError }
+        return String(lastError[..<marker.lowerBound])
+    }
+}
+
 /// Read-only offline cache seam for chat sessions and transcripts.
 ///
 /// The cache only pre-paints cold opens and covers offline browsing; connected
@@ -244,11 +265,15 @@ public enum OpenClawChatOutboxUpdateResult: Equatable, Sendable {
 public enum OpenClawChatOutboxChange: Equatable, Sendable {
     case canceled(gatewayID: String, id: String)
     case confirmed(gatewayID: String, id: String)
+    case failed(gatewayID: String, id: String, attemptVersion: Int, retryCount: Int, reason: String?)
     case invalidated(gatewayID: String, scope: OpenClawChatOutboxScope)
 
     var gatewayID: String {
         switch self {
-        case let .canceled(gatewayID, _), let .confirmed(gatewayID, _), let .invalidated(gatewayID, _):
+        case let .canceled(gatewayID, _),
+             let .confirmed(gatewayID, _),
+             let .failed(gatewayID, _, _, _, _),
+             let .invalidated(gatewayID, _):
             gatewayID
         }
     }

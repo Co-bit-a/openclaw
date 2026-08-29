@@ -3894,6 +3894,23 @@ struct ChatViewModelTests {
         }
     }
 
+    @Test func `history snapshot preserves every advertised pending run`() async {
+        let payload = historyPayload(
+            hasActiveRun: true,
+            activeRunIds: ["run-primary", "run-secondary"],
+            inFlightRun: OpenClawChatInFlightRun(runId: "run-primary", text: "working"))
+        let (_, vm) = await makeViewModel(historyResponses: [])
+
+        let pending = await MainActor.run { () -> Set<String> in
+            vm.pendingRuns = ["run-secondary"]
+            let request = vm.beginHistoryRequest()
+            vm.applyInFlightRunSnapshot(payload, for: request)
+            return vm.pendingRuns
+        }
+
+        #expect(pending == ["run-primary", "run-secondary"])
+    }
+
     @Test func `older history cannot replace newer run snapshot`() async throws {
         let olderGate = AsyncGate()
         let historyCalls = AsyncCounter()
@@ -5180,6 +5197,46 @@ struct ChatViewModelTests {
         }
         #expect(await MainActor.run { vm.streamingAssistantText } == "Still working")
         #expect(await MainActor.run { vm.pendingToolCalls.count } == 1)
+    }
+
+    @Test func `active response does not advertise an attachment draft as sendable`() async throws {
+        let activeHistory = historyPayload(
+            sessionId: "sess-main",
+            hasActiveRun: true,
+            activeRunIds: ["run-active"],
+            effectiveQueueMode: .steer)
+        let (transport, vm) = await makeViewModel(
+            historyResponses: [activeHistory],
+            sessionsResponses: [sessionsResponse([
+                sessionEntry(
+                    key: "main",
+                    updatedAt: 1,
+                    sessionId: "sess-main",
+                    hasActiveRun: true,
+                    activeRunIds: ["run-active"]),
+            ])])
+        try await loadAndWaitBootstrap(vm: vm, sessionId: "sess-main")
+        let attachmentID = await MainActor.run { () -> UUID in
+            let attachment = OpenClawPendingAttachment(
+                url: nil,
+                data: Data("attachment".utf8),
+                fileName: "attachment.txt",
+                mimeType: "text/plain",
+                preview: nil)
+            vm.input = "follow up with file"
+            vm.attachments = [attachment]
+            return attachment.id
+        }
+
+        #expect(await MainActor.run { !vm.canSend })
+        await MainActor.run { vm.send() }
+        try await waitUntil("active attachment rejection is visible") {
+            await MainActor.run {
+                vm.errorText == "Send attachments after the active response finishes."
+            }
+        }
+        #expect(await transport.sentContexts().isEmpty)
+        #expect(await MainActor.run { vm.attachments.map(\.id) == [attachmentID] })
     }
 
     @Test func `terminal ok send ack clears pending run without waiting for completion`() async throws {
@@ -7866,7 +7923,7 @@ struct ChatViewModelTests {
                     !vm.composerToolEnabled(server: "github", tool: "create_issue")
             }
         }
-        #expect((await transport.sessionSettingsPatches()[1].toolOverrides ?? nil)?
+        #expect(await (transport.sessionSettingsPatches()[1].toolOverrides ?? nil)?
             .mcpToolsDeny["github"] == ["create_issue"])
 
         await MainActor.run { vm.clearComposerToolOverrides() }

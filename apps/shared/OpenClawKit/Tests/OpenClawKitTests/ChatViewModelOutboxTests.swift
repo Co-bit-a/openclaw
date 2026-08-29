@@ -99,6 +99,7 @@ actor OutboxTransportState {
     var heldSendGate: DeleteGate?
     var sendCompletionGate: DeleteGate?
     var sendFailsBeforeRecording = false
+    var structuredSendAvailable = true
     let sendStarted = DeleteGate()
     let sendRecorded = DeleteGate()
     var commandListGate: DeleteGate?
@@ -467,8 +468,13 @@ final class OutboxTestTransport: @unchecked Sendable, OpenClawChatTransport {
         let expectedRoute = await state.routeGeneration
         let routingContract = await state.sessionRoutingContract
         let transport = self
-        return .available(OpenClawChatTransportRouteLease(
+        return await .available(OpenClawChatTransportRouteLease(
             sendTargetedContextMessage: { sessionKey, context, message, thinking, idempotencyKey, _ in
+                if context.requiresStructuredDelivery,
+                   await !(transport.state.structuredSendAvailable)
+                {
+                    throw OpenClawChatTransportSendError.notDispatched
+                }
                 await transport.state.recordContext(context)
                 return try await transport.sendMessage(
                     sessionKey: sessionKey,
@@ -486,7 +492,8 @@ final class OutboxTestTransport: @unchecked Sendable, OpenClawChatTransport {
                     expectedRoute: expectedRoute)
             },
             sessionRoutingContract: routingContract,
-            supportsSessionSettingsCAS: self.supportsSessionSettingsCAS))
+            supportsSessionSettingsCAS: self.supportsSessionSettingsCAS,
+            supportsStructuredSendContext: self.state.structuredSendAvailable))
     }
 
     /// Gated model patch: `setSessionModel` blocks until `releaseModelPatch`
@@ -932,6 +939,51 @@ struct ChatViewModelOutboxTests {
         #expect(await transport.state.sentMessages.isEmpty)
     }
 
+    @Test func `older gateway parks structured replay permanently without health loop`() async throws {
+        let (store, _, databaseDirectory) = try makeOutboxStore()
+        defer { try? FileManager.default.removeItem(at: databaseDirectory) }
+        let context = OpenClawChatSendContext(
+            agentID: "main",
+            expectedSessionRoutingContract: "per-sender|main|main",
+            sessionID: "sess-main",
+            queueMode: .followup,
+            expectedLeaf: .entry("leaf-main"),
+            requiresStructuredDelivery: true)
+        #expect(await store.enqueueCommand(OpenClawChatOutboxCommand(
+            id: "structured-legacy",
+            sessionKey: "main",
+            deliverySessionKey: "main",
+            routingContract: "per-sender|main|main",
+            agentID: "main",
+            structuredMessageText: "follow up",
+            sendContext: context,
+            text: "follow up",
+            thinking: "off",
+            createdAt: Date().timeIntervalSince1970,
+            status: .queued,
+            retryCount: 0,
+            lastError: nil)))
+        let transport = OutboxTestTransport(healthy: false)
+        await transport.state.update { $0.structuredSendAvailable = false }
+        let vm = await makeOutboxViewModel(transport: transport, outbox: store)
+
+        await MainActor.run { vm.load() }
+        await transport.goOnline()
+
+        try await waitUntil("structured replay becomes terminal") {
+            let command = await store.loadCommands().first
+            return command?.status == .failed &&
+                command?.lastError == OpenClawChatSQLiteTranscriptCache.outboxClientUpgradeRequiredError
+        }
+        #expect(await MainActor.run { vm.healthOK })
+        #expect(await transport.state.sentMessages.isEmpty)
+        #expect(await store.loadCommands().first?.retryCount == 0)
+        await MainActor.run { vm.flushOutboxIfNeeded() }
+        try await Task.sleep(for: .milliseconds(25))
+        #expect(await store.loadCommands().first?.status == .failed)
+        #expect(await MainActor.run { vm.healthOK })
+    }
+
     @Test func `released 2026.7.x gateway without branch listing dispatches queued send without polling branches`()
         async throws
     {
@@ -1364,11 +1416,18 @@ struct ChatViewModelOutboxTests {
             outbox: store,
             activeAgentID: "agent-b",
             sessionRoutingContract: "per-sender|main|agent-b")
+        let sibling = await makeOutboxViewModel(
+            transport: transport,
+            outbox: store,
+            activeAgentID: "agent-b",
+            sessionRoutingContract: "per-sender|main|agent-b")
 
         await MainActor.run { vm.load() }
+        await MainActor.run { sibling.load() }
         try await waitUntil("structured failure is visible") {
             await MainActor.run {
-                vm.messages.contains { vm.outboxState(for: $0.id)?.isFailed == true }
+                vm.messages.contains { vm.outboxState(for: $0.id)?.allowsRetry == true } &&
+                    sibling.messages.contains { sibling.outboxState(for: $0.id)?.allowsRetry == true }
             }
         }
         let messageID = try #require(await MainActor.run {
@@ -1383,6 +1442,11 @@ struct ChatViewModelOutboxTests {
         #expect(await MainActor.run { vm.outboxState(for: messageID)?.isFailed == true })
         #expect(await MainActor.run { vm.outboxState(for: messageID)?.allowsRetry == false })
         #expect(await MainActor.run { vm.messages.contains(where: { $0.id == messageID }) })
+        try await waitUntil("sibling retry action is revoked") {
+            await MainActor.run {
+                sibling.messages.contains { sibling.outboxState(for: $0.id)?.allowsRetry == false }
+            }
+        }
     }
 
     @Test func `atomic gateway routing rejection parks without retrying`() async throws {

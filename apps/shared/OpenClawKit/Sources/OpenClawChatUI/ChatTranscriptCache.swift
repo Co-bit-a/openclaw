@@ -122,7 +122,6 @@ public actor OpenClawChatSQLiteTranscriptCache: OpenClawChatTranscriptCache,
         else { return lastError }
         return String(lastError[..<marker.lowerBound])
     }
-
     private let databases: OpenClawClientDatabases
     public nonisolated let gatewayID: String
     private var isRetired = false
@@ -764,12 +763,21 @@ extension OpenClawChatSQLiteTranscriptCache {
         retryCount: Int,
         lastError: String?) async -> OpenClawChatOutboxUpdateResult
     {
-        await transitionClaimedCommand(
+        let result = await transitionClaimedCommand(
             id: id,
             attemptVersion: attemptVersion,
             status: .failed,
             retryCount: retryCount,
             lastError: lastError)
+        if result == .updated {
+            self.outboxChangeHub.yield(.failed(
+                gatewayID: self.gatewayID,
+                id: id,
+                attemptVersion: attemptVersion,
+                retryCount: retryCount,
+                reason: lastError))
+        }
+        return result
     }
 
     public func markCommandRetriedIfPresent(
@@ -793,7 +801,7 @@ extension OpenClawChatSQLiteTranscriptCache {
         else { return .unavailable }
         let gatewayID = self.gatewayID
         do {
-            return try await self.databases.stateQueue.write { db in
+            let result: OpenClawChatOutboxUpdateResult = try await self.databases.stateQueue.write { db in
                 guard let row = try Row.fetchOne(
                     db,
                     sql: """
@@ -889,6 +897,15 @@ extension OpenClawChatSQLiteTranscriptCache {
                     ])
                 return db.changesCount > 0 ? .updated : .superseded
             }
+            if case let .nonRetryable(reason) = result {
+                self.outboxChangeHub.yield(.failed(
+                    gatewayID: gatewayID,
+                    id: id,
+                    attemptVersion: expectation.attemptVersion,
+                    retryCount: expectation.retryCount,
+                    reason: reason))
+            }
+            return result
         } catch {
             return .unavailable
         }
