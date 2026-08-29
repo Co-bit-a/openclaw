@@ -68,6 +68,34 @@ describe("restart health", () => {
     }
   });
 
+  it("uses the configured TLS target for local restart reachability", async () => {
+    const configuredProbe = {
+      requestHttp: vi.fn(),
+      resolveWebSocketTarget: vi.fn(async () => ({
+        url: "wss://127.0.0.1:18789",
+        tlsFingerprint: "ab".repeat(32),
+      })),
+    };
+    probeGateway.mockResolvedValue({
+      ok: true,
+      close: null,
+      error: null,
+      server: { version: "2026.8.1", connId: "tls-ready" },
+      health: null,
+    });
+
+    const { confirmGatewayReachable } = await import("./restart-health-probe.js");
+    await expect(confirmGatewayReachable({ port: 18_789, configuredProbe })).resolves.toMatchObject(
+      { reachable: true, gatewayVersion: "2026.8.1" },
+    );
+    expect(probeGateway).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "wss://127.0.0.1:18789",
+        tlsFingerprint: "ab".repeat(32),
+      }),
+    );
+  });
+
   it("does not exceed the start deadline when a listener never responds", async () => {
     const server = createServer(() => {});
     server.listen(0, "127.0.0.1");

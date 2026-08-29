@@ -8,6 +8,7 @@ const resolveGatewayStartupTiming = vi.hoisted(() => vi.fn(() => ({ deadlineMs: 
 const waitForGatewayHealthyRestart = vi.hoisted(() => vi.fn());
 const waitForGatewayHttpReadiness = vi.hoisted(() => vi.fn());
 const renderRestartDiagnostics = vi.hoisted(() => vi.fn(() => ["runtime diagnostics"]));
+const readServiceConfig = vi.hoisted(() => vi.fn());
 
 vi.mock("../../commands/gateway-startup-timing.js", () => ({ resolveGatewayStartupTiming }));
 vi.mock("../../config/config.js", () => ({
@@ -15,7 +16,7 @@ vi.mock("../../config/config.js", () => ({
   resolveGatewayPort: vi.fn(() => 18_789),
 }));
 vi.mock("../../config/io.js", () => ({
-  createConfigIO: vi.fn(() => ({ readBestEffortConfig: async () => ({}) })),
+  createConfigIO: vi.fn(() => ({ readBestEffortConfig: () => readServiceConfig() })),
 }));
 vi.mock("../../daemon/service.js", () => ({ resolveGatewayService: () => service }));
 vi.mock("../../infra/gateway-supervision.js", () => ({
@@ -74,6 +75,7 @@ describe("Gateway service start readiness", () => {
       environment: {},
     });
     runServiceStart.mockReset();
+    readServiceConfig.mockReset().mockResolvedValue({});
     resolveGatewayStartupTiming.mockClear();
     waitForGatewayHealthyRestart.mockReset().mockResolvedValue({ healthy: true });
     waitForGatewayHttpReadiness.mockReset().mockResolvedValue({ healthz: 200, readyz: 200 });
@@ -81,6 +83,8 @@ describe("Gateway service start readiness", () => {
   });
 
   it("proves Gateway health and readiness before start reports success", async () => {
+    const config = { gateway: { tls: { enabled: true } } };
+    readServiceConfig.mockResolvedValue(config);
     invokeStartPostCheck();
 
     await runDaemonStart({ json: true });
@@ -90,6 +94,7 @@ describe("Gateway service start readiness", () => {
     );
     expect(waitForGatewayHttpReadiness).toHaveBeenCalledWith(
       expect.objectContaining({
+        config,
         port: 18_789,
         attempts: 90,
         deadlineAt: expect.any(Number),

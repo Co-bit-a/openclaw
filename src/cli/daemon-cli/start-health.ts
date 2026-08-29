@@ -1,4 +1,5 @@
 import { resolveGatewayStartupTiming } from "../../commands/gateway-startup-timing.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { GatewayService } from "../../daemon/service.js";
 import { formatCliCommand } from "../command-format.js";
 import {
@@ -11,7 +12,7 @@ import {
 export async function verifyGatewayStartReadiness(params: {
   expectedPort?: number;
   fail: (message: string, hints?: string[]) => void;
-  resolveContext: () => Promise<{ env: NodeJS.ProcessEnv; port: number }>;
+  resolveContext: () => Promise<{ config?: OpenClawConfig; env: NodeJS.ProcessEnv; port: number }>;
   service: GatewayService;
   warnings: string[];
 }): Promise<void> {
@@ -31,6 +32,7 @@ export async function verifyGatewayStartReadiness(params: {
       supervisorKeepsAlive: process.platform === "darwin",
     }),
     waitForGatewayHttpReadiness({
+      config: context.config,
       port,
       attempts,
       deadlineAt,
