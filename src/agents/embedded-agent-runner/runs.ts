@@ -121,6 +121,7 @@ const embeddedAgentMessageInjectionTargetHandle = Symbol(
 /** Opaque exact-run capability minted only after an ingress proves ownership. */
 export type EmbeddedAgentMessageInjectionTarget = {
   readonly [embeddedAgentMessageInjectionTargetHandle]: EmbeddedAgentQueueHandle;
+  readonly runId: string;
   readonly sessionId: string;
 };
 
@@ -603,7 +604,7 @@ export function resolveEmbeddedAgentMessageInjectionTarget(params: {
   if (!handle || handle.runId !== runId || ACTIVE_EMBEDDED_RUNS_BY_RUN_ID.get(runId) !== handle) {
     return undefined;
   }
-  return { [embeddedAgentMessageInjectionTargetHandle]: handle, sessionId };
+  return { [embeddedAgentMessageInjectionTargetHandle]: handle, runId, sessionId };
 }
 
 /** Inject owner-proven input only while the captured run remains the exact live owner. */
@@ -617,13 +618,38 @@ export function queueEmbeddedAgentMessageInjectionTarget(
 ): Promise<EmbeddedAgentQueueMessageOutcome> {
   const handle = target[embeddedAgentMessageInjectionTargetHandle];
   const fingerprint = normalizeOptionalString(handle.toolAuthorityFingerprint);
-  if (ACTIVE_EMBEDDED_RUNS.get(target.sessionId) !== handle || !fingerprint) {
+  if (
+    ACTIVE_EMBEDDED_RUNS.get(target.sessionId) !== handle ||
+    ACTIVE_EMBEDDED_RUNS_BY_RUN_ID.get(target.runId) !== handle ||
+    !fingerprint
+  ) {
     return Promise.resolve(createQueueFailureOutcome(target.sessionId, "tool_authority_mismatch"));
   }
   return queueEmbeddedAgentMessageWithOutcomeAsync(target.sessionId, text, {
     ...options,
     toolAuthorityFingerprint: fingerprint,
   });
+}
+
+/** Abort only while the captured run remains the exact live owner. */
+export function abortEmbeddedAgentMessageInjectionTarget(
+  target: EmbeddedAgentMessageInjectionTarget,
+): boolean {
+  const handle = target[embeddedAgentMessageInjectionTargetHandle];
+  if (
+    ACTIVE_EMBEDDED_RUNS.get(target.sessionId) !== handle ||
+    ACTIVE_EMBEDDED_RUNS_BY_RUN_ID.get(target.runId) !== handle ||
+    !isEmbeddedRunHandleAbortable(target.sessionId, handle)
+  ) {
+    return false;
+  }
+  try {
+    handle.abort();
+    return true;
+  } catch (err) {
+    diag.warn(`abort failed: sessionId=${target.sessionId} err=${String(err)}`);
+    return false;
+  }
 }
 
 function prepareEmbeddedAgentQueueMessage(

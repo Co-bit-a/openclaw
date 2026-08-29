@@ -4041,6 +4041,7 @@ describe("talk realtime gateway relay", () => {
       setActiveEmbeddedRun(
         "embedded-session-1",
         {
+          runId: "run-1",
           queueMessage: vi.fn(async () => undefined),
           isStreaming: () => true,
           isCompacting: () => false,
@@ -4111,6 +4112,7 @@ describe("talk realtime gateway relay", () => {
     setActiveEmbeddedRun(
       "embedded-session-1",
       {
+        runId: "run-1",
         queueMessage: vi.fn(async () => undefined),
         isStreaming: () => true,
         isCompacting: () => false,
@@ -4179,6 +4181,7 @@ describe("talk realtime gateway relay", () => {
     setActiveEmbeddedRun(
       "embedded-session-1",
       {
+        runId: "run-1",
         queueMessage: vi.fn(async () => undefined),
         isStreaming: () => true,
         isCompacting: () => false,
@@ -4223,6 +4226,7 @@ describe("talk realtime gateway relay", () => {
     setActiveEmbeddedRun(
       "embedded-session-1",
       {
+        runId: "run-1",
         queueMessage: vi.fn(async () => undefined),
         isStreaming: () => true,
         isCompacting: () => false,
@@ -4451,6 +4455,7 @@ describe("talk realtime gateway relay", () => {
     setActiveEmbeddedRun(
       "embedded-session-1",
       {
+        runId: "run-1",
         queueMessage: vi.fn(async () => undefined),
         isStreaming: () => true,
         isCompacting: () => false,

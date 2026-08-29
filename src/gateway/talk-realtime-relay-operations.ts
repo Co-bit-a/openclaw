@@ -7,7 +7,6 @@ import { createDeferredCore } from "../shared/deferred.js";
 import { buildRealtimeVoiceAgentCancelProviderResult } from "../talk/agent-run-control-shared.js";
 import {
   controlOwnedRealtimeVoiceAgentRun,
-  controlRealtimeVoiceAgentRun,
   type RealtimeVoiceAgentControlResult,
 } from "../talk/agent-run-control.js";
 import { registerClientVoiceConsultRun } from "../talk/client-voice-session.js";
@@ -503,9 +502,7 @@ export async function steerTalkRealtimeRelayAgentRun(params: {
     mode: params.mode,
     recentEvents: session.harness.talk.recentEvents,
   };
-  const result = target
-    ? await controlOwnedRealtimeVoiceAgentRun(controlParams, target)
-    : await controlRealtimeVoiceAgentRun(controlParams);
+  const result = await controlOwnedRealtimeVoiceAgentRun(controlParams, target);
   if (relaySessions.get(session.id) !== session) {
     throw new Error("Realtime relay session closed while steering the agent run");
   }

@@ -13,10 +13,7 @@ import { buildAgentMainSessionKey } from "../../routing/session-key.js";
 import { assertSecretOwnerAvailable } from "../../secrets/runtime-degraded-state.js";
 import { REALTIME_VOICE_AGENT_CONSULT_TOOL } from "../../talk/agent-consult-tool.js";
 import { REALTIME_VOICE_AGENT_CONTROL_TOOL } from "../../talk/agent-run-control-shared.js";
-import {
-  controlOwnedRealtimeVoiceAgentRun,
-  controlRealtimeVoiceAgentRun,
-} from "../../talk/agent-run-control.js";
+import { controlOwnedRealtimeVoiceAgentRun } from "../../talk/agent-run-control.js";
 import { resolveTalkSessionAgentId } from "../../talk/agent-target.js";
 import {
   appendClientVoiceTranscript,
@@ -265,9 +262,7 @@ export const createTalkClient: GatewayRequestHandler = async ({
                 clientConnId: ownerConnId,
                 sessionKey,
               });
-              return target
-                ? await controlOwnedRealtimeVoiceAgentRun(controlParams, target)
-                : await controlRealtimeVoiceAgentRun(controlParams);
+              return controlOwnedRealtimeVoiceAgentRun(controlParams, target);
             },
             appendTranscript: ({ entryId, role, text }) =>
               appendClientVoiceTranscript({

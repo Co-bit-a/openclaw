@@ -7,7 +7,9 @@ import { markDiagnosticToolStartedForTest } from "../../logging/diagnostic-run-a
 import { resetDiagnosticSessionStateForTest } from "../../logging/diagnostic-session-state.js";
 import { createUserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.js";
 import { createTestUserTurnTranscriptTarget } from "../../sessions/user-turn-transcript.test-support.js";
+import { controlOwnedRealtimeVoiceAgentRun } from "../../talk/agent-run-control.js";
 import {
+  abortEmbeddedAgentMessageInjectionTarget,
   clearActiveEmbeddedRun,
   formatEmbeddedAgentQueueFailureSummary,
   preemptAndDrainEmbeddedHeartbeatRun,
@@ -53,7 +55,11 @@ describe("embedded-agent active-run steering", () => {
     });
 
     const replacementQueue = vi.fn(async () => {});
-    const replacement = createEmbeddedRunHandle({ queueMessage: replacementQueue });
+    const replacementAbort = vi.fn();
+    const replacement = createEmbeddedRunHandle({
+      queueMessage: replacementQueue,
+      abort: replacementAbort,
+    });
     Object.assign(replacement, {
       runId: "run-replacement",
       toolAuthorityFingerprint: "authority-replacement",
@@ -65,6 +71,53 @@ describe("embedded-agent active-run steering", () => {
         isInboundUserMessage: true,
       }),
     ).resolves.toMatchObject({ queued: false, reason: "tool_authority_mismatch" });
+    expect(replacementQueue).not.toHaveBeenCalled();
+
+    expect(abortEmbeddedAgentMessageInjectionTarget(target!)).toBe(false);
+    expect(replacementAbort).not.toHaveBeenCalled();
+  });
+
+  it("steers and cancels through the production adapter without reaching a replacement", async () => {
+    const firstQueue = vi.fn(async () => {});
+    const firstAbort = vi.fn();
+    const first = createEmbeddedRunHandle({
+      queueMessage: firstQueue,
+      abort: firstAbort,
+      runId: "run-first",
+    });
+    Object.assign(first, { toolAuthorityFingerprint: "authority-first" });
+    setActiveEmbeddedRun("session-talk", first, "agent:main:main");
+    const target = resolveEmbeddedAgentMessageInjectionTarget({
+      sessionId: "session-talk",
+      runId: "run-first",
+    });
+
+    await expect(
+      controlOwnedRealtimeVoiceAgentRun(
+        { sessionKey: "agent:main:main", text: "use the safer plan", mode: "steer" },
+        target,
+      ),
+    ).resolves.toMatchObject({ ok: true, queued: true, sessionId: "session-talk" });
+    expect(firstQueue).toHaveBeenCalledTimes(1);
+
+    const replacementQueue = vi.fn(async () => {});
+    const replacementAbort = vi.fn();
+    const replacement = createEmbeddedRunHandle({
+      queueMessage: replacementQueue,
+      abort: replacementAbort,
+      runId: "run-replacement",
+    });
+    Object.assign(replacement, { toolAuthorityFingerprint: "authority-replacement" });
+    setActiveEmbeddedRun("session-talk", replacement, "agent:main:main");
+
+    await expect(
+      controlOwnedRealtimeVoiceAgentRun(
+        { sessionKey: "agent:main:main", text: "cancel", mode: "cancel" },
+        target,
+      ),
+    ).resolves.toMatchObject({ ok: false, aborted: false, reason: "abort_rejected" });
+    expect(firstAbort).not.toHaveBeenCalled();
+    expect(replacementAbort).not.toHaveBeenCalled();
     expect(replacementQueue).not.toHaveBeenCalled();
   });
 

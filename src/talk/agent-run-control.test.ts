@@ -19,6 +19,7 @@ function createDeps(options: {
 }) {
   return {
     abortEmbeddedAgentRun: vi.fn(() => options.abortResult ?? true),
+    abortEmbeddedAgentMessageInjectionTarget: vi.fn(() => options.abortResult ?? true),
     queueEmbeddedAgentMessageWithOutcomeAsync: vi.fn(
       async (
         sessionId: string,
