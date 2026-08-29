@@ -1,104 +1,28 @@
 /** Coordinates automatic Control UI bootstrap work for one Gateway connection epoch. */
 
-const MAX_CONNECTION_BOOTSTRAP_CONCURRENCY = 2;
-
-type QueuedBootstrapTask = {
-  generation: number;
-  key: string;
-  resolve: () => void;
-  run: () => Promise<unknown>;
-};
-
 export type ConnectionBootstrapCoordinator = {
   reset: () => void;
   run: (key: string, task: () => Promise<unknown>) => Promise<void>;
   synchronize: (params: { client: object | null; connected: boolean }) => void;
 };
 
-/**
- * Keeps automatic connection work bounded without serializing interactive RPCs.
- * A reconnect starts a new epoch; queued work from the prior client never starts.
- */
+/** Loads connection-only bootstrap scheduling after a Gateway connection first needs it. */
 export function createConnectionBootstrapCoordinator(): ConnectionBootstrapCoordinator {
-  let client: object | null = null;
-  let generation = 0;
-  let active = 0;
-  const queued: QueuedBootstrapTask[] = [];
-  const tasks = new Map<string, Promise<void>>();
-
-  const drain = () => {
-    while (active < MAX_CONNECTION_BOOTSTRAP_CONCURRENCY) {
-      const task = queued.shift();
-      if (!task) {
-        return;
-      }
-      if (task.generation !== generation) {
-        task.resolve();
-        continue;
-      }
-      if (!client) {
-        queued.unshift(task);
-        return;
-      }
-      active++;
-      const finish = () => {
-        if (task.generation === generation) {
-          tasks.delete(task.key);
-        }
-        task.resolve();
-      };
-      void task
-        .run()
-        .then(finish, finish)
-        .finally(() => {
-          active--;
-          drain();
-        });
-    }
-  };
-
-  const reset = () => {
-    generation += 1;
-    client = null;
-    queued.splice(0).forEach((task) => task.resolve());
-    tasks.clear();
-  };
+  let runtime: Promise<ConnectionBootstrapCoordinator> | undefined;
+  const load = () =>
+    (runtime ??= import("./connection-bootstrap.runtime.ts").then(
+      ({ createConnectionBootstrapRuntime }) => createConnectionBootstrapRuntime(),
+    ));
 
   return {
-    reset,
-    synchronize(params) {
-      const nextClient = params.connected ? params.client : null;
-      if (nextClient === client) {
-        // A connected snapshot can publish before this coordinator's listener
-        // runs. A later disconnected snapshot invalidates that queued work.
-        if (!nextClient && queued.length) {
-          reset();
-        }
-        return;
-      }
-      if (!nextClient) {
-        reset();
-        return;
-      }
-      if (client) {
-        reset();
-      }
-      client = nextClient;
-      drain();
+    reset: () => {
+      void runtime?.then((coordinator) => coordinator.reset());
     },
-    run(key, task) {
-      const current = tasks.get(key);
-      if (current) {
-        return current;
+    run: (key, task) => load().then((coordinator) => coordinator.run(key, task)),
+    synchronize: (params) => {
+      if (params.connected || runtime) {
+        void load().then((coordinator) => coordinator.synchronize(params));
       }
-      let resolve!: () => void;
-      const scheduled = new Promise<void>((resolveTask) => {
-        resolve = resolveTask;
-      });
-      tasks.set(key, scheduled);
-      queued.push({ generation, key, resolve, run: task });
-      drain();
-      return scheduled;
     },
   };
 }

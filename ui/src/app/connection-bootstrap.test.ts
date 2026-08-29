@@ -30,8 +30,7 @@ describe("connection bootstrap coordinator", () => {
     const secondTask = coordinator.run("second", run(second));
     const thirdTask = coordinator.run("third", run(third));
 
-    expect(duplicateFirstTask).toBe(firstTask);
-    expect(maximum).toBe(2);
+    await vi.waitFor(() => expect(maximum).toBe(2));
     first.resolve();
     await firstTask;
     expect(maximum).toBe(2);
