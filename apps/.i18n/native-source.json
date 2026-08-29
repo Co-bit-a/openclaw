@@ -2188,6 +2188,7 @@
     {"id":"native.apple.839637d118fd48d8","source":"Could not save the paired gateway.","surface":"apple","sites":[{"kind":"ui-localized-call","path":"apps/ios/Sources/Gateway/GatewayConnectionController.swift"}]},
     {"id":"native.apple.3fafd1c7d790f37e","source":"Could not save the watch device credential","surface":"apple","sites":[{"kind":"ui-localized-call","path":"apps/ios/WatchApp/Sources/WatchDirectNode.swift"}]},
     {"id":"native.apple.7fe92f7eeba84c10","source":"Could not save the watch device identity","surface":"apple","sites":[{"kind":"ui-localized-call","path":"apps/ios/WatchApp/Sources/WatchDirectNode.swift"}]},
+    {"id":"native.apple.50fad84775d0a23f","source":"Could not secure queued messages before changing session settings.","surface":"apple","sites":[{"kind":"ui-localized-call","path":"apps/shared/OpenClawKit/Sources/OpenClawChatUI/ChatViewModel+ComposerCapabilities.swift"}]},
     {"id":"native.apple.5b95e31abdc0a6a5","source":"Could not share this file.","surface":"apple","sites":[{"kind":"ui-modifier","path":"apps/ios/Sources/Design/AgentWorkspaceFilesScreen.swift"}]},
     {"id":"native.apple.404d8fdebf1d070f","source":"Could not sign watch identity","surface":"apple","sites":[{"kind":"ui-localized-call","path":"apps/ios/WatchApp/Sources/WatchDirectNode.swift"}]},
     {"id":"native.apple.6b2836eedc437cf8","source":"Could not start recording: %@","surface":"apple","sites":[{"kind":"ui-localized-call","path":"apps/shared/OpenClawKit/Sources/OpenClawChatUI/VoiceNoteRecorder.swift"}]},

@@ -462,6 +462,20 @@ extension OpenClawChatViewModel {
                       target == self.currentModelPatchTarget(),
                       self.sessionKey == originalSessionKey
                 else { return }
+                if let outbox = self.outbox, let originalOutboxScope {
+                    let parked = await outbox.parkQueuedCommands(
+                        in: originalOutboxScope,
+                        lastError: OpenClawChatSQLiteTranscriptCache.outboxSettingsChangedError)
+                    guard parked else {
+                        throw NSError(
+                            domain: "OpenClawChatOutbox",
+                            code: 1,
+                            userInfo: [
+                                NSLocalizedDescriptionKey: String(
+                                    localized: "Could not secure queued messages before changing session settings."),
+                            ])
+                    }
+                }
                 let result = try await routeLease.patchSessionSettings(
                     sessionKey: target.canonicalSessionKey,
                     agentID: target.agentID,

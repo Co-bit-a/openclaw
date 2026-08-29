@@ -547,7 +547,7 @@ private func sendWhileOffline(_ vm: OpenClawChatViewModel, text: String) async t
 }
 
 /// Protocol delegation plus switches makes race windows deterministic without copying the store contract.
-private actor ScriptedOutbox: OpenClawChatCommandOutbox {
+actor ScriptedOutbox: OpenClawChatCommandOutbox {
     enum Forwarding { case full, minimal, holdingCancellation }
 
     private nonisolated let base: OpenClawChatSQLiteTranscriptCache
@@ -556,6 +556,7 @@ private actor ScriptedOutbox: OpenClawChatCommandOutbox {
     private var enqueueRelease: DeleteGate?
     private var recoveryAvailable = true
     private var terminalWritesAvailable = true
+    private var parkingAvailable = true
     private var captured = DeleteGate()
     private var snapshotRelease = DeleteGate()
     private var shouldHoldNextLoad = false
@@ -583,6 +584,10 @@ private actor ScriptedOutbox: OpenClawChatCommandOutbox {
 
     func setTerminalWritesAvailable(_ available: Bool) {
         self.terminalWritesAvailable = available
+    }
+
+    func setParkingAvailable(_ available: Bool) {
+        self.parkingAvailable = available
     }
 
     func waitUntilRecoveryAttempted() async {
@@ -704,7 +709,8 @@ private actor ScriptedOutbox: OpenClawChatCommandOutbox {
         in scope: OpenClawChatOutboxScope,
         lastError: String) async -> Bool
     {
-        await self.base.parkQueuedCommands(in: scope, lastError: lastError)
+        guard self.parkingAvailable else { return false }
+        return await self.base.parkQueuedCommands(in: scope, lastError: lastError)
     }
 
     func markCommandRetriedIfPresent(

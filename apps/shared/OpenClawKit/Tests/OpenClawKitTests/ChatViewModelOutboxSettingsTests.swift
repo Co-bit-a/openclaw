@@ -3,6 +3,18 @@ import OpenClawKit
 import Testing
 @testable import OpenClawChatUI
 
+private actor SettingsPatchCounter {
+    private var count = 0
+
+    func increment() {
+        self.count += 1
+    }
+
+    func current() -> Int {
+        self.count
+    }
+}
+
 struct ChatViewModelOutboxSettingsTests {
     @Test func `background replay uses its command owned session settings`() async throws {
         let (store, _, databaseDirectory) = try makeOutboxStore()
@@ -55,8 +67,10 @@ struct ChatViewModelOutboxSettingsTests {
         }
 
         #expect(await transport.state.sentMessages.isEmpty)
-        #expect(await store.loadCommands().first?.lastError ==
-            "Session settings were not captured; review and retry this message.")
+        let failed = try #require(await store.loadCommands().first)
+        #expect(failed.lastError == OpenClawChatSQLiteTranscriptCache.outboxSettingsReviewRequiredError)
+        #expect(OpenClawChatSQLiteTranscriptCache.outboxDisplayError(failed.lastError) ==
+            "Session settings were not captured. Review and retry this message.")
 
         let messageID = try #require(await MainActor.run { vm.messages.last?.id })
         await MainActor.run { vm.retryOutboxMessage(messageID) }
@@ -161,7 +175,8 @@ struct ChatViewModelOutboxSettingsTests {
         }
         try await Task.sleep(for: .milliseconds(50))
         #expect(await transport.state.sentMessages.isEmpty)
-        #expect(await store.loadCommands().first?.lastError == "Restriction was not saved.")
+        #expect(await store.loadCommands().first?.lastError ==
+            OpenClawChatSQLiteTranscriptCache.outboxSettingsChangedError)
     }
 
     @Test func `bulk settings failure immediately publishes failed bubble state`() async throws {
@@ -189,5 +204,49 @@ struct ChatViewModelOutboxSettingsTests {
                 vm.messages.contains { vm.outboxState(for: $0.id)?.isFailed == true }
             }
         }
+    }
+
+    @Test func `settings mutation does not reach gateway when durable parking fails`() async throws {
+        let (store, _, databaseDirectory) = try makeOutboxStore()
+        defer { try? FileManager.default.removeItem(at: databaseDirectory) }
+        #expect(await store.enqueueCommand(outboxTestCommand(
+            id: "parking-unavailable",
+            text: "keep queued safely",
+            createdAt: Date().timeIntervalSince1970,
+            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(
+                permissionMode: .full,
+                toolOverrides: nil))))
+        let scripted = ScriptedOutbox(base: store)
+        await scripted.setParkingAvailable(false)
+        let patchCalls = SettingsPatchCounter()
+        let catalog = OpenClawChatComposerCapabilityCatalog(
+            sessionSettingsAvailable: true,
+            permissionMutationAvailable: true,
+            sessionSettingsCASAvailable: true)
+        let transport = OutboxTestTransport(
+            healthy: false,
+            composerCapabilityCatalog: catalog,
+            sessionSettingsPatchHook: { await patchCalls.increment() })
+        let vm = await makeOutboxViewModel(transport: transport, outbox: scripted)
+        await MainActor.run {
+            vm.sessions = [outboxSessionEntry(
+                key: "main",
+                thinkingLevels: ["off"],
+                sessionID: "session-main",
+                permissionMode: .full)]
+            vm.sessionId = "session-main"
+        }
+        await vm.loadComposerCapabilities()
+
+        await MainActor.run { vm.selectComposerPermissionMode(.guarded) }
+        try await waitUntil("parking failure settles") {
+            await MainActor.run {
+                !vm.composerCapabilityMutationDisabled &&
+                    vm.errorText == "Could not secure queued messages before changing session settings."
+            }
+        }
+
+        #expect(await patchCalls.current() == 0)
+        #expect(await store.loadCommands().first?.status == .queued)
     }
 }
