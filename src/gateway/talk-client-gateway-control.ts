@@ -144,9 +144,13 @@ function createTalkClientAgentRuntime(params: {
   return agentRuntime;
 }
 
-export function createTalkRealtimeRunControlOwner(params: {
+export function createTalkRealtimeRunControlOwner<Captured = undefined>(params: {
   hasActiveRun: () => boolean;
-  execute: (args: unknown) => Promise<RealtimeVoiceAgentControlResult>;
+  capture?: (args: unknown) => Captured;
+  execute: (
+    args: unknown,
+    captured: Captured | undefined,
+  ) => Promise<RealtimeVoiceAgentControlResult>;
   speak: (message: string) => void;
   warn: (message: string) => void;
 }) {
@@ -159,10 +163,11 @@ export function createTalkRealtimeRunControlOwner(params: {
       onError?: (error: unknown) => void | Promise<void>;
     } = {},
   ): boolean => {
+    const captured = params.capture?.(args);
     const admission = queue.enqueue(async () => {
       await options.ready;
       try {
-        const result = await params.execute(args);
+        const result = await params.execute(args, captured);
         await options.onResult?.(result);
       } catch (error) {
         if (!options.onError) {
@@ -320,7 +325,7 @@ export function createTalkClientAgentConsultRunner(params: {
   };
 }
 
-export function createTalkClientGatewayControlOwner(params: {
+export function createTalkClientGatewayControlOwner<CapturedControl = undefined>(params: {
   voiceSessionId: string;
   providerId?: string;
   sessionKey: string;
@@ -334,11 +339,11 @@ export function createTalkClientGatewayControlOwner(params: {
   }) => Promise<void>;
   flushTranscript: () => Promise<void>;
   closeLogicalSession: () => Promise<void>;
-  controlAgentRun?: (params: {
-    sessionKey: string;
-    text: string;
-    mode?: unknown;
-  }) => Promise<RealtimeVoiceAgentControlResult>;
+  captureAgentRunControl?: () => CapturedControl;
+  controlAgentRun?: (
+    params: { sessionKey: string; text: string; mode?: unknown },
+    captured: CapturedControl | undefined,
+  ) => Promise<RealtimeVoiceAgentControlResult>;
 }): GatewayControlOwner {
   let bridge: RealtimeVoiceBridge | undefined;
   let closeProvider: (() => Promise<void>) | undefined;
@@ -383,13 +388,16 @@ export function createTalkClientGatewayControlOwner(params: {
     await bridge.submitToolResult(callId, result);
   };
 
-  const applyControl = async (args: unknown) => {
+  const applyControl = async (args: unknown, captured: CapturedControl | undefined) => {
     const parsed = parseRealtimeVoiceAgentControlToolArgs(args);
-    const result = await (params.controlAgentRun ?? controlRealtimeVoiceAgentRun)({
+    const controlParams = {
       sessionKey: params.sessionKey,
       text: parsed.text,
       mode: parsed.mode,
-    });
+    };
+    const result = params.controlAgentRun
+      ? await params.controlAgentRun(controlParams, captured)
+      : await controlRealtimeVoiceAgentRun(controlParams);
     if (result.mode === "cancel" && result.ok) {
       for (const controller of consultControllers.values()) {
         controller.abort(new Error("Realtime voice consult cancelled"));
@@ -427,6 +435,7 @@ export function createTalkClientGatewayControlOwner(params: {
 
   const runControl = createTalkRealtimeRunControlOwner({
     hasActiveRun: () => consultControllers.size > 0,
+    ...(params.captureAgentRunControl ? { capture: params.captureAgentRunControl } : {}),
     execute: applyControl,
     speak: (message) => bridge?.sendUserMessage?.(message),
     warn,

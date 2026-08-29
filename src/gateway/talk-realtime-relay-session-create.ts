@@ -27,6 +27,7 @@ import {
 } from "./talk-realtime-relay-issues.js";
 import {
   cancelTalkRealtimeRelayProviderToolCall,
+  captureTalkRealtimeRelayAgentRunControlTarget,
   closeRelaySession,
   closeTalkRealtimeRelaySessionsForConnection,
   enforceRelaySessionLimits,
@@ -170,7 +171,12 @@ export function createTalkRealtimeRelaySession(
       const relay = getActiveRelay();
       return Boolean(relay && pruneInactiveRelayAgentRuns(relay) > 0);
     },
-    execute: async (args) => {
+    capture: () =>
+      captureTalkRealtimeRelayAgentRunControlTarget({
+        relaySessionId,
+        connId: params.connId,
+      }),
+    execute: async (args, controlTarget) => {
       const relay = getActiveRelay();
       if (!relay || !args || typeof args !== "object" || Array.isArray(args)) {
         throw new Error("Realtime relay control session is closed");
@@ -183,6 +189,7 @@ export function createTalkRealtimeRelaySession(
         relaySessionId,
         connId: params.connId,
         text,
+        controlTarget,
       });
     },
     speak: (message) => bridgeRef.current?.sendUserMessage?.(message),

@@ -280,6 +280,58 @@ describe("Talk client Gateway control owner", () => {
     await owner.close();
   });
 
+  it("captures browser run authority before queued control executes", async () => {
+    let currentTarget = { id: "first" };
+    const controlAgentRun = vi.fn(
+      async (_params: unknown, _captured: { id: string } | undefined) => ({
+        ok: false,
+        mode: "steer" as const,
+        sessionKey: "agent:main:main",
+        active: false,
+        queued: false,
+        reason: "no_active_run" as const,
+        message: "stale target rejected",
+        speak: false,
+        show: true,
+        suppress: false,
+      }),
+    );
+    const bridge = {
+      connect: vi.fn(async () => undefined),
+      close: vi.fn(),
+      sendAudio: vi.fn(),
+      setMediaTimestamp: vi.fn(),
+      submitToolResult: vi.fn(async () => undefined),
+      acknowledgeMark: vi.fn(),
+      isConnected: vi.fn(() => true),
+    } satisfies RealtimeVoiceBridge;
+    const owner = createTalkClientGatewayControlOwner({
+      voiceSessionId: "voice-capture",
+      sessionKey: "agent:main:main",
+      connId: "conn-capture",
+      context: controlContext(),
+      runAgentConsult: vi.fn(async () => ({ text: "done" })),
+      captureAgentRunControl: () => currentTarget,
+      controlAgentRun,
+      appendTranscript: vi.fn(async () => undefined),
+      flushTranscript: vi.fn(async () => undefined),
+      closeLogicalSession: vi.fn(async () => undefined),
+    });
+    owner.control.bindBridge(bridge);
+    owner.control.onToolCall?.({
+      itemId: "item-control",
+      callId: "call-control",
+      name: "openclaw_agent_control",
+      args: { text: "steer" },
+    });
+    const admittedTarget = currentTarget;
+    currentTarget = { id: "replacement" };
+
+    await vi.waitFor(() => expect(controlAgentRun).toHaveBeenCalledTimes(1));
+    expect(controlAgentRun.mock.calls[0]?.[1]).toBe(admittedTarget);
+    await owner.close();
+  });
+
   it("closes the provider and logical session when the owning client disconnects", async () => {
     const closeProvider = vi.fn(async () => undefined);
     const closeLogicalSession = vi.fn(async () => undefined);

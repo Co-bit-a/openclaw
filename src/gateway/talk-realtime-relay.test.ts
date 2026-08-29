@@ -4027,6 +4027,52 @@ describe("talk realtime gateway relay", () => {
     });
   });
 
+  it("skips a stale relay run before a later live target", async () => {
+    const abortLiveRun = vi.fn();
+    setActiveEmbeddedRun(
+      "embedded-session-live",
+      {
+        runId: "run-live",
+        queueMessage: vi.fn(async () => undefined),
+        isStreaming: () => true,
+        isCompacting: () => false,
+        abort: abortLiveRun,
+      },
+      "agent:main:main",
+    );
+    const session = createTalkRealtimeRelaySession({
+      context: { broadcastToConnIds: vi.fn(), chatAbortControllers: new Map() } as never,
+      connId: "conn-1",
+      provider: createIdleRelayProvider(),
+      providerConfig: {},
+      instructions: "brief",
+      tools: [],
+      sessionKey: "agent:main:main",
+    });
+    registerTalkRealtimeRelayAgentRun({
+      relaySessionId: session.relaySessionId,
+      connId: "conn-1",
+      sessionKey: "agent:main:main",
+      runId: "run-stale",
+    });
+    registerTalkRealtimeRelayAgentRun({
+      relaySessionId: session.relaySessionId,
+      connId: "conn-1",
+      sessionKey: "agent:main:main",
+      runId: "run-live",
+    });
+
+    await expect(
+      steerTalkRealtimeRelayAgentRun({
+        relaySessionId: session.relaySessionId,
+        connId: "conn-1",
+        text: "cancel",
+        mode: "cancel",
+      }),
+    ).resolves.toMatchObject({ ok: true, aborted: true });
+    expect(abortLiveRun).toHaveBeenCalledOnce();
+  });
+
   it.each([
     {
       supportsSuppression: undefined,
