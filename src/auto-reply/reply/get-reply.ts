@@ -702,9 +702,10 @@ export async function getReplyFromConfig(
   }
   // Utility-model narration is turn-local decoration. Initialize the durable
   // session first, then keep it completely outside model-locked native runs.
-  const admittedSessionSettings = (
-    optsWithCommandQueueOverride as RuntimeInternalGetReplyOptions | undefined
-  )?.admittedSessionSettings;
+  const admittedSessionSettings =
+    // SAFETY: Gateway dispatch owns this internal extension and forwards the same options object here.
+    (optsWithCommandQueueOverride as RuntimeInternalGetReplyOptions | undefined)
+      ?.admittedSessionSettings;
   const turnToolOverrides = admittedSessionSettings
     ? admittedSessionSettings.toolOverrides
     : sessionEntry.toolOverrides;
