@@ -1227,10 +1227,10 @@ openclaw-settings-save-indicator:empty {
   display: flex;
   flex-direction: column;
   gap: var(--sidebar-group-gap);
-  /* Left-only on purpose (#124879): the right 8px of .sidebar-sessions padding is
-     clearance so a classic (non-overlay) scrollbar cannot clip the selection pill.
-     Reclaim space inside the row instead of widening it, or that fix regresses. */
-  margin-inline: -8px 0;
+  /* Cancel the section's lead inset so every sidebar family shares one grid.
+     Keep half the trailing inset as classic-scrollbar clearance while reclaiming
+     the other half for row badges and actions. */
+  margin-inline: -8px -4px;
   /* Sessions are stateful app chrome, not navigation links. */
   cursor: var(--cursor-action);
 }
@@ -2157,7 +2157,7 @@ openclaw-settings-save-indicator:empty {
   flex-direction: column;
   gap: 4px;
   padding-top: 12px;
-  margin: 12px 0 10px;
+  margin-block: 12px 10px;
   border-top: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
   border-radius: 0;
 }

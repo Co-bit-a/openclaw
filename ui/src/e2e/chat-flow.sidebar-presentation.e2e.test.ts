@@ -33,6 +33,66 @@ const subtitleStabilityProofDir = path.join(
 );
 
 suite.define(() => {
+  it("aligns sidebar sections on one grid and keeps a compact trailing gutter", async () => {
+    const context = await suite.newBrowserContext({
+      locale: "en-US",
+      serviceWorkers: "block",
+      viewport: { height: 900, width: 1280 },
+    });
+    const page = await context.newPage();
+    await installMockGateway(page, {
+      methodResponses: {
+        "sessions.list": chatSessionListResponse([
+          {
+            key: "agent:main:alignment",
+            kind: "direct",
+            label: "Alignment fixture",
+            category: "OpenClaw",
+            updatedAt: 1,
+          },
+        ]),
+      },
+      presenceUsers: [
+        { id: "person-a", name: "Ada", watchedSessions: [] },
+        { id: "person-b", name: "Grace", watchedSessions: [] },
+        { id: "person-c", name: "Linus", watchedSessions: [] },
+      ],
+      sessionKey: "agent:main:alignment",
+    });
+
+    try {
+      await page.goto(`${suite.server.baseUrl}chat`);
+      await page.locator(".sidebar-online__person").first().waitFor();
+      await page
+        .locator('.sidebar-recent-session[data-session-key="agent:main:alignment"]')
+        .waitFor();
+      const layout = await page.evaluate(() => {
+        const bounds = (selector: string) => {
+          const element = document.querySelector<HTMLElement>(selector);
+          if (!element) {
+            throw new Error(`Missing sidebar alignment fixture ${selector}`);
+          }
+          const box = element.getBoundingClientRect();
+          return { left: Math.round(box.left), right: Math.round(box.right) };
+        };
+        return {
+          nav: bounds(".nav-item"),
+          onlineHeader: bounds(".sidebar-online .sidebar-recent-sessions__head"),
+          onlineRow: bounds(".sidebar-online__person"),
+          sessionHeader: bounds(".sidebar-sessions .sidebar-recent-sessions__head"),
+          sessionRow: bounds(".sidebar-sessions .sidebar-recent-session"),
+        };
+      });
+
+      expect(new Set(Object.values(layout).map(({ left }) => left))).toEqual(new Set([10]));
+      expect(layout.onlineHeader.right).toBe(layout.sessionHeader.right);
+      expect(layout.onlineRow.right).toBe(layout.sessionRow.right);
+      expect(layout.nav.right - layout.sessionRow.right).toBe(4);
+    } finally {
+      await suite.closeBrowserContext(context);
+    }
+  });
+
   it("keeps a running subtitle and row height stable when its session is opened", async () => {
     if (captureUiProofEnabled) {
       await mkdir(subtitleStabilityProofDir, { recursive: true });
