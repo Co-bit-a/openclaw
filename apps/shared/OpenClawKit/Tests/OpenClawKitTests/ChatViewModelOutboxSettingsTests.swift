@@ -89,7 +89,7 @@ struct ChatViewModelOutboxSettingsTests {
         }
         #expect(await transport.state.sentMessages.isEmpty)
         #expect(await store.loadCommands().first?.lastError ==
-            "Update the gateway before sending queued messages with session settings.")
+            OpenClawChatSQLiteTranscriptCache.outboxSettingsGatewayUpgradeRequiredError)
     }
 
     @Test func `failed restrictive patch cannot release a later automatic flush`() async throws {
@@ -103,35 +103,45 @@ struct ChatViewModelOutboxSettingsTests {
             expectedSessionSettings: fullAccess)))
         let patchRelease = DeleteGate()
         let patchStarted = DeleteGate()
+        let catalog = OpenClawChatComposerCapabilityCatalog(
+            sessionSettingsAvailable: true,
+            permissionMutationAvailable: true,
+            sessionSettingsCASAvailable: true)
         let transport = OutboxTestTransport(
             healthy: false,
-            sessions: [outboxSessionEntry(key: "main", thinkingLevels: ["off"], permissionMode: .full)],
-            supportsSessionSettingsCAS: true)
+            sessions: [
+                outboxSessionEntry(
+                    key: "main",
+                    thinkingLevels: ["off"],
+                    sessionID: "session-main",
+                    permissionMode: .full),
+                outboxSessionEntry(key: "other", thinkingLevels: ["off"]),
+            ],
+            supportsSessionSettingsCAS: true,
+            composerCapabilityCatalog: catalog,
+            sessionSettingsPatchHook: {
+                await patchStarted.open()
+                await patchRelease.wait()
+                throw NSError(
+                    domain: "ChatViewModelOutboxSettingsTests",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Restriction was not saved."])
+            })
         let vm = await makeOutboxViewModel(transport: transport, outbox: store)
         await MainActor.run { vm.load() }
         try await waitUntil("outbox restore") {
             await MainActor.run { vm.hasRestoredOutboxMessages }
         }
         await MainActor.run {
-            let target = vm.sessionSettingsPatchTarget(
-                in: "main",
-                canonicalSessionKey: "agent:main:main",
-                agentID: "main",
-                sessionRoutingContract: "per-sender|main|main")
-            let requestID = vm.reserveSessionSettingsRequest(for: target)
-            vm.enqueueSessionSettingsPatch(requestID: requestID, target: target) { [weak vm] _ in
-                await patchStarted.open()
-                await patchRelease.wait()
-                guard let vm else { return }
-                await vm.recordCapabilityPatchFailure(
-                    NSError(
-                        domain: "ChatViewModelOutboxSettingsTests",
-                        code: 1,
-                        userInfo: [NSLocalizedDescriptionKey: "Restriction was not saved."]),
-                    target: target,
-                    outboxScope: OpenClawChatOutboxScope(sessionKey: "main", agentID: "main"))
-            }
+            vm.sessions = [outboxSessionEntry(
+                key: "main",
+                thinkingLevels: ["off"],
+                sessionID: "session-main",
+                permissionMode: .full)]
+            vm.sessionId = "session-main"
         }
+        await vm.loadComposerCapabilities()
+        await MainActor.run { vm.selectComposerPermissionMode(.guarded) }
         await patchStarted.wait()
         #expect(await transport.state.sentMessages.isEmpty)
         await MainActor.run { vm.switchSession(to: "other") }

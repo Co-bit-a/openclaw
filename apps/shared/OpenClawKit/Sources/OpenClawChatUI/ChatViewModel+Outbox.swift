@@ -895,12 +895,13 @@ extension OpenClawChatViewModel {
         if self.transport.outboxRequiresSessionRoutingContract,
            !routeLease.supportsSessionSettingsCAS
         {
-            let message = "Update the gateway before sending queued messages with session settings."
+            let reason = OpenClawChatSQLiteTranscriptCache.outboxSettingsGatewayUpgradeRequiredError
+            let message = OpenClawChatSQLiteTranscriptCache.outboxDisplayError(reason)
             _ = await outbox.markCommandFailedIfPresent(
                 id: command.id,
                 attemptVersion: command.attemptVersion,
                 retryCount: command.retryCount,
-                lastError: message)
+                lastError: reason)
             self.setOutboxState(.failed(reason: message), forCommandID: command.id)
             self.errorText = message
             return .continueFlush
@@ -908,12 +909,13 @@ extension OpenClawChatViewModel {
         if routeLease.supportsSessionSettingsCAS,
            command.expectedSessionSettings == nil
         {
-            let message = "Session settings were not captured; review and retry this message."
+            let reason = OpenClawChatSQLiteTranscriptCache.outboxSettingsReviewRequiredError
+            let message = OpenClawChatSQLiteTranscriptCache.outboxDisplayError(reason)
             _ = await outbox.markCommandFailedIfPresent(
                 id: command.id,
                 attemptVersion: command.attemptVersion,
                 retryCount: command.retryCount,
-                lastError: message)
+                lastError: reason)
             self.setOutboxState(.failed(reason: message), forCommandID: command.id)
             self.errorText = message
             return .continueFlush
@@ -1101,12 +1103,13 @@ extension OpenClawChatViewModel {
         _ command: OpenClawChatOutboxCommand,
         outbox: any OpenClawChatCommandOutbox) async -> Bool
     {
-        let reason = "Session settings changed; review and retry this message."
+        let storedReason = OpenClawChatSQLiteTranscriptCache.outboxSettingsChangedError
+        let reason = OpenClawChatSQLiteTranscriptCache.outboxDisplayError(storedReason)
         let update = await outbox.markCommandFailedIfPresent(
             id: command.id,
             attemptVersion: command.attemptVersion,
             retryCount: command.retryCount,
-            lastError: reason)
+            lastError: storedReason)
         guard update != .unavailable else {
             self.applyTransportHealth(false)
             return false

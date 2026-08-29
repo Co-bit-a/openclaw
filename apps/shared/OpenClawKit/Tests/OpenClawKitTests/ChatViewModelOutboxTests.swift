@@ -165,6 +165,8 @@ final class OutboxTestTransport: @unchecked Sendable, OpenClawChatTransport {
     private let requiresRoutingContract: Bool
     private let routeUnavailableReason: String?
     private let supportsSessionSettingsCAS: Bool
+    private let composerCapabilityCatalog: OpenClawChatComposerCapabilityCatalog?
+    private let sessionSettingsPatchHook: (@Sendable () async throws -> Void)?
     private let stream: AsyncStream<OpenClawChatTransportEvent>
     private let continuation: AsyncStream<OpenClawChatTransportEvent>.Continuation
 
@@ -175,6 +177,8 @@ final class OutboxTestTransport: @unchecked Sendable, OpenClawChatTransport {
         supportsSlashCommands: Bool = false,
         requiresRoutingContract: Bool = true,
         supportsSessionSettingsCAS: Bool = true,
+        composerCapabilityCatalog: OpenClawChatComposerCapabilityCatalog? = nil,
+        sessionSettingsPatchHook: (@Sendable () async throws -> Void)? = nil,
         routeUnavailableReason: String? = nil)
     {
         self.state = OutboxTransportState(healthy: healthy, sendFails: sendFails)
@@ -182,6 +186,8 @@ final class OutboxTestTransport: @unchecked Sendable, OpenClawChatTransport {
         self.supportsSlashCommands = supportsSlashCommands
         self.requiresRoutingContract = requiresRoutingContract
         self.supportsSessionSettingsCAS = supportsSessionSettingsCAS
+        self.composerCapabilityCatalog = composerCapabilityCatalog
+        self.sessionSettingsPatchHook = sessionSettingsPatchHook
         self.routeUnavailableReason = routeUnavailableReason
         var cont: AsyncStream<OpenClawChatTransportEvent>.Continuation!
         self.stream = AsyncStream { c in cont = c }
@@ -208,6 +214,26 @@ final class OutboxTestTransport: @unchecked Sendable, OpenClawChatTransport {
 
     var supportsSlashCommandCatalog: Bool {
         self.supportsSlashCommands
+    }
+
+    var supportsComposerCapabilities: Bool {
+        self.composerCapabilityCatalog != nil
+    }
+
+    func loadComposerCapabilityCatalog(
+        sessionKey _: String,
+        agentID _: String?) async -> OpenClawChatComposerCapabilityCatalog
+    {
+        self.composerCapabilityCatalog ?? OpenClawChatComposerCapabilityCatalog()
+    }
+
+    func patchSessionSettings(
+        sessionKey _: String,
+        agentID _: String?,
+        patch _: OpenClawChatSessionSettingsPatch) async throws -> OpenClawChatModelPatchResult?
+    {
+        try await self.sessionSettingsPatchHook?()
+        return nil
     }
 
     var outboxRequiresSessionRoutingContract: Bool {

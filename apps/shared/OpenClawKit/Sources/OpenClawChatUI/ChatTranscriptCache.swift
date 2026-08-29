@@ -98,13 +98,23 @@ public actor OpenClawChatSQLiteTranscriptCache: OpenClawChatTranscriptCache,
     public static let outboxChangedTargetError = "delivery_target_changed"
     public static let outboxClientUpgradeRequiredError = "client_upgrade_required"
     public static let outboxSettingsUpgradeRequiredError = "settings_client_upgrade_required"
+    public static let outboxSettingsGatewayUpgradeRequiredError = "settings_gateway_upgrade_required"
+    public static let outboxSettingsReviewRequiredError = "settings_review_required"
+    public static let outboxSettingsChangedError = "settings_changed"
 
     static func outboxDisplayError(_ lastError: String?) -> String? {
         guard let lastError else { return nil }
-        if lastError == self.outboxClientUpgradeRequiredError ||
-            lastError == self.outboxSettingsUpgradeRequiredError
-        {
-            return "A previous app version could not safely send this message. Review and retry it."
+        switch lastError {
+        case self.outboxClientUpgradeRequiredError, self.outboxSettingsUpgradeRequiredError:
+            return String(localized: "A previous app version could not safely send this message. Review and retry it.")
+        case self.outboxSettingsGatewayUpgradeRequiredError:
+            return String(localized: "Update the gateway before sending queued messages with session settings.")
+        case self.outboxSettingsReviewRequiredError:
+            return String(localized: "Session settings were not captured. Review and retry this message.")
+        case self.outboxSettingsChangedError:
+            return String(localized: "Session settings changed. Review and retry this message.")
+        default:
+            break
         }
         guard
             let marker = lastError.range(of: "\n# branch-park:")

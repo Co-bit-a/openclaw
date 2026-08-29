@@ -493,16 +493,16 @@ extension OpenClawChatViewModel {
                 else { return }
                 self.composerCapabilityState.notice = notice
             } catch {
-                guard self.composerCapabilityState.mutationGeneration == mutationGeneration,
-                      self.composerCapabilityOwnerID == ownerID,
-                      self.composerCapabilitySessionID == expectedSessionID,
-                      target == self.currentModelPatchTarget(),
-                      self.sessionKey == originalSessionKey
-                else { return }
+                let updateVisibleState = self.composerCapabilityState.mutationGeneration == mutationGeneration &&
+                    self.composerCapabilityOwnerID == ownerID &&
+                    self.composerCapabilitySessionID == expectedSessionID &&
+                    target == self.currentModelPatchTarget() &&
+                    self.sessionKey == originalSessionKey
                 await self.recordCapabilityPatchFailure(
                     error,
                     target: target,
-                    outboxScope: originalOutboxScope)
+                    outboxScope: originalOutboxScope,
+                    updateVisibleState: updateVisibleState)
             }
         }
     }
@@ -510,14 +510,17 @@ extension OpenClawChatViewModel {
     func recordCapabilityPatchFailure(
         _ error: Error,
         target: ModelPatchTarget,
-        outboxScope: OpenClawChatOutboxScope?) async
+        outboxScope: OpenClawChatOutboxScope?,
+        updateVisibleState: Bool) async
     {
         self.capabilityPatchFailureRevisionsByTarget[target, default: 0] &+= 1
         self.capabilityPatchFailureMessagesByTarget[target] = error.localizedDescription
         if let outbox = self.outbox, let scope = outboxScope {
             _ = await outbox.parkQueuedCommands(in: scope, lastError: error.localizedDescription)
         }
-        self.composerCapabilityState.errorMessage = error.localizedDescription
-        self.errorText = error.localizedDescription
+        if updateVisibleState {
+            self.composerCapabilityState.errorMessage = error.localizedDescription
+            self.errorText = error.localizedDescription
+        }
     }
 }
