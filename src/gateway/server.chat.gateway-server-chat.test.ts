@@ -318,7 +318,7 @@ describe("gateway server chat", () => {
   test("chat.send keeps admitted settings after the session row broadens", async () => {
     await withMainSessionStore(async () => {
       const dispatchEntered = createDeferred<InternalGetReplyOptions | undefined>();
-      const releaseDispatch = createDeferred<void>();
+      const releaseDispatch = createDeferred();
       dispatchInboundMessageMock.mockImplementationOnce(async (args: unknown) => {
         const params = args as { replyOptions?: InternalGetReplyOptions };
         dispatchEntered.resolve(params.replyOptions);

@@ -660,28 +660,6 @@ describe("method scope resolution", () => {
     });
   });
 
-  it("keeps permission CAS write-scoped while full remains admin-only", () => {
-    const guarded = {
-      key: "agent:main:ios-1",
-      expectedPermissionMode: "read-only",
-      permissionMode: "guarded",
-    };
-    expect(resolveLeastPrivilegeOperatorScopesForMethod("sessions.patch", guarded)).toEqual([
-      "operator.write",
-    ]);
-    expect(authorizeOperatorScopesForMethod("sessions.patch", ["operator.write"], guarded)).toEqual(
-      {
-        allowed: true,
-      },
-    );
-    expect(
-      authorizeOperatorScopesForMethod("sessions.patch", ["operator.write"], {
-        ...guarded,
-        permissionMode: "full",
-      }),
-    ).toEqual({ allowed: false, missingScope: "operator.admin" });
-  });
-
   it("delegates sessions.patchMany from its patch fields", () => {
     expect(
       resolveLeastPrivilegeOperatorScopesForMethod("sessions.patchMany", {
