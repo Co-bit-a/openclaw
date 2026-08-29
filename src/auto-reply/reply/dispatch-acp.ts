@@ -31,7 +31,6 @@ import type { ChatType } from "../../channels/chat-type.js";
 import { readChannelContextAdmissionEvidence } from "../../channels/message-access/admission-evidence.js";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
 import type { PrepareAssistantTranscriptMessage } from "../../config/sessions/transcript-assistant-delivery.js";
-import type { SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { TtsAutoMode } from "../../config/types.tts.js";
 import { logVerbose } from "../../globals.js";
@@ -448,7 +447,7 @@ export async function tryDispatchAcpReplyCore(params: {
   runId?: string;
   sessionKey?: string;
   toolsAllow?: string[];
-  admittedSessionSettings?: Readonly<Pick<SessionEntry, "permissionMode" | "toolOverrides">>;
+  admittedSessionSettingsRestricted?: boolean;
   images?: Array<{ data: string; mimeType: string }>;
   extractedFileImages?: ExtractedFileImage[];
   abortSignal?: AbortSignal;
@@ -770,10 +769,7 @@ export async function tryDispatchAcpReplyCore(params: {
     if (
       isRestrictiveRuntimeToolsAllow(params.toolsAllow) ||
       toolPolicyRestrictsTools(params.ctx.ConversationToolPolicy) ||
-      (params.admittedSessionSettings?.permissionMode !== undefined &&
-        params.admittedSessionSettings.permissionMode !== "full") ||
-      (params.admittedSessionSettings?.toolOverrides !== undefined &&
-        Object.keys(params.admittedSessionSettings.toolOverrides).length > 0)
+      params.admittedSessionSettingsRestricted === true
     ) {
       auditTerminalOutcome = "blocked";
       throw new AcpRuntimeError(

@@ -1,6 +1,6 @@
 import type { PluginHookReplyDispatchEvent } from "../../plugins/hook-types.js";
 import type { CommandSessionMetadataChange } from "./command-session-metadata.js";
-import type { ReplySessionBinding } from "./get-reply.types.js";
+import type { InternalGetReplyOptions, ReplySessionBinding } from "./get-reply.types.js";
 
 export type InternalReplyResolverOptions = {
   onDeliberateSilentTerminalReply?: () => void;
@@ -17,13 +17,31 @@ export type PluginBindingTranscriptOwner = {
 };
 
 export function createReplyDispatchEvent(
-  params: Omit<PluginHookReplyDispatchEvent, "shouldSendToolSummaries"> & {
+  params: Omit<
+    PluginHookReplyDispatchEvent,
+    "admittedSessionSettingsRestricted" | "shouldSendToolSummaries"
+  > & {
+    admittedSessionSettings?: InternalGetReplyOptions["admittedSessionSettings"];
     shouldSendToolSummaries: () => boolean;
   },
 ): PluginHookReplyDispatchEvent {
-  const { shouldSendToolSummaries, ...event } = params;
-  return Object.defineProperty(event, "shouldSendToolSummaries", {
-    enumerable: true,
-    get: shouldSendToolSummaries,
+  const { admittedSessionSettings, shouldSendToolSummaries, ...event } = params;
+  const admittedSessionSettingsRestricted =
+    (admittedSessionSettings?.permissionMode !== undefined &&
+      admittedSessionSettings.permissionMode !== "full") ||
+    (admittedSessionSettings?.toolOverrides !== undefined &&
+      Object.keys(admittedSessionSettings.toolOverrides).length > 0);
+  return Object.defineProperties(event, {
+    // Hook handlers share this event. Expose only an immutable derived fact so
+    // one handler cannot rewrite admitted authority before ACP consumes it.
+    admittedSessionSettingsRestricted: {
+      enumerable: true,
+      value: admittedSessionSettingsRestricted,
+      writable: false,
+    },
+    shouldSendToolSummaries: {
+      enumerable: true,
+      get: shouldSendToolSummaries,
+    },
   }) as PluginHookReplyDispatchEvent;
 }

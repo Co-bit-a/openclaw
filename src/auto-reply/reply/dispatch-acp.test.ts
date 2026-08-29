@@ -362,9 +362,7 @@ async function runDispatch(params: {
   suppressReplyLifecycle?: boolean;
   sourceReplyDeliveryMode?: "automatic" | "message_tool_only";
   toolsAllow?: string[];
-  admittedSessionSettings?: Parameters<
-    typeof tryDispatchAcpReplyCore
-  >[0]["admittedSessionSettings"];
+  admittedSessionSettingsRestricted?: boolean;
   recordProcessed?: (
     outcome: "completed" | "skipped" | "error",
     opts?: { reason?: string; error?: string },
@@ -405,7 +403,7 @@ async function runDispatch(params: {
     shouldSendFullToolDetails: false,
     bypassForCommand: false,
     toolsAllow: params.toolsAllow,
-    admittedSessionSettings: params.admittedSessionSettings,
+    admittedSessionSettingsRestricted: params.admittedSessionSettingsRestricted,
     ...(params.onReplyStart ? { onReplyStart: params.onReplyStart } : {}),
     recordProcessed: params.recordProcessed ?? vi.fn(),
     markIdle: params.markIdle ?? vi.fn(),
@@ -2928,10 +2926,7 @@ describe("tryDispatchAcpReplyCore", () => {
     await runDispatch({
       bodyForAgent: "test",
       dispatcher,
-      admittedSessionSettings: {
-        permissionMode: "guarded",
-        toolOverrides: { webSearch: false },
-      },
+      admittedSessionSettingsRestricted: true,
     });
 
     expect(managerMocks.runTurn).not.toHaveBeenCalled();
