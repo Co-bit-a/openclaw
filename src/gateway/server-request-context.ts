@@ -46,7 +46,10 @@ type GatewayRequestContextParams = {
   isTerminalEnabled: GatewayRequestContext["isTerminalEnabled"];
   execApprovalManager: GatewayRequestContext["execApprovalManager"];
   questionManager?: GatewayRequestContext["questionManager"];
-  cancelRunBoundApprovals?: (runId: string, context: GatewayRequestContext) => number;
+  cancelRunBoundApprovals?: (
+    target: Parameters<NonNullable<GatewayRequestContext["cancelRunBoundApprovals"]>>[0],
+    context: GatewayRequestContext,
+  ) => number;
   forwardPluginApprovalRequest?: GatewayRequestContext["forwardPluginApprovalRequest"];
   pluginApprovalIosPushDelivery?: GatewayRequestContext["pluginApprovalIosPushDelivery"];
   pluginApprovalManager: GatewayRequestContext["pluginApprovalManager"];

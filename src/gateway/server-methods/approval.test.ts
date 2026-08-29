@@ -975,6 +975,7 @@ describe("unified approval handlers", () => {
     expect(
       cancelAgentRuntimeBoundApprovals({
         authority: oldAuthority,
+        reason: "permission-change",
         manager: managers.exec,
         publish: () => {},
       }),
@@ -982,6 +983,7 @@ describe("unified approval handlers", () => {
     expect(
       cancelAgentRuntimeBoundApprovals({
         authority: oldAuthority,
+        reason: "permission-change",
         manager: managers.plugin,
         publish: () => {},
       }),
@@ -989,6 +991,8 @@ describe("unified approval handlers", () => {
 
     await expect(oldExec.decision).resolves.toBeNull();
     await expect(oldPlugin.decision).resolves.toBeNull();
+    expect(oldExec.record.resolvedBy).toBe("permission-change");
+    expect(oldPlugin.record.resolvedBy).toBe("permission-change");
     expect(managers.exec.getSnapshot(successorExec.record.id)?.resolvedAtMs).toBeUndefined();
     expect(managers.plugin.getSnapshot(successorPlugin.record.id)?.resolvedAtMs).toBeUndefined();
     managers.exec.resolve(successorExec.record.id, "deny");

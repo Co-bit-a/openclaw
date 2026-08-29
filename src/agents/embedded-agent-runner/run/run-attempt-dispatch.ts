@@ -117,6 +117,7 @@ type AttemptControl = {
 
 export async function dispatchEmbeddedRunAttempt(input: {
   params: InternalRunParams;
+  permissionChange?: EmbeddedRunAttemptParams["permissionChange"];
   /** Run-owned start timestamp captured before admission; projected on recovery. */
   runStartedAtMs: number;
   runtime: AttemptRuntime;
@@ -271,6 +272,7 @@ export async function dispatchEmbeddedRunAttempt(input: {
     toolsAllow: params.toolsAllow,
   });
   const attemptParams: EmbeddedRunAttemptParams = {
+    permissionChange: input.permissionChange,
     admittedRunContext: params.admittedRunContext,
     startedAtMs: input.runStartedAtMs,
     contextEngineAgentId: runtime.contextEngineAgentId,

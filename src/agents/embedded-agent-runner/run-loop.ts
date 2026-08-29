@@ -2,11 +2,6 @@
 import { OPENCLAW_EMBEDDED_CONTEXT_ENGINE_HOST } from "../../context-engine/host-compat.js";
 import { resolveContextEngineOwnerPluginId } from "../../context-engine/registry.js";
 import { buildContextEngineRuntimeSettings } from "../../context-engine/runtime-settings.js";
-import { formatErrorMessage } from "../../infra/errors.js";
-import {
-  retireSessionMcpRuntime,
-  retireSessionMcpRuntimeForSessionKey,
-} from "../agent-bundle-mcp-tools.js";
 import { resolveSessionAgentIds } from "../agent-scope.js";
 import type { ToolOutcomeObservation } from "../agent-tools.before-tool-call.js";
 import { isHeartbeatLifecycleRunKind } from "../bootstrap-mode.js";
@@ -17,7 +12,6 @@ import {
   selectContextEngineForTranscriptHost,
 } from "../harness/context-engine-logical-turn.js";
 import { drainPendingContextEngineTurnsBeforeRun } from "../harness/context-engine-turn-attempt.js";
-import { runAgentCleanupStep } from "../run-cleanup-timeout.js";
 import { resolveToolLoopDetectionConfig } from "../tool-loop-detection-config.js";
 import { normalizeUsage } from "../usage.js";
 import { log } from "./logger.js";
@@ -25,12 +19,10 @@ import {
   createPostCompactionLoopGuard,
   PostCompactionLoopPersistedError,
 } from "./post-compaction-loop-guard.js";
-import { clearProviderPromptState } from "./provider-prompt-state.js";
 import { createEmbeddedRunReplayState } from "./replay-state.js";
 import { handleEmbeddedAssistantFailure } from "./run/assistant-failure.js";
 import { prepareAndDispatchEmbeddedRunAttempt } from "./run/attempt-dispatch-preparation.js";
 import { normalizeEmbeddedRunAttempt } from "./run/attempt-normalization.js";
-import { forgetPromptBuildDrainCacheForRun } from "./run/attempt-prompt-helpers.js";
 import { recoverEmbeddedRunAttempt } from "./run/attempt-recovery.js";
 import { createAttemptCarryover } from "./run/attempt-result.js";
 import { activateCodeModeReconciliation } from "./run/code-mode-reconciliation.js";
@@ -46,6 +38,7 @@ import {
   DEFAULT_EMPTY_RESPONSE_RETRY_LIMIT,
   DEFAULT_REASONING_ONLY_RETRY_LIMIT,
 } from "./run/incomplete-turn-recovery.js";
+import { createEmbeddedRunPermissionChanges } from "./run/permission-change.js";
 import { measureEmbeddedAgentPreparation } from "./run/preparation-timing.js";
 import {
   beginRunAttempt,
@@ -55,6 +48,7 @@ import {
   type RunRetryBudget,
 } from "./run/retry-budget.js";
 import { handleRetryLimitExhaustion } from "./run/retry-limit.js";
+import { cleanupEmbeddedRunRuntime } from "./run/runtime-cleanup.js";
 import { prepareEmbeddedRunRuntime } from "./run/runtime-preparation.js";
 import { createEmbeddedRunSessionPromptState } from "./run/session-prompt-state.js";
 import { prepareTerminalWithSettledTurnFinalization } from "./run/settled-turn-finalization.js";
@@ -250,6 +244,7 @@ export async function runPreparedEmbeddedLoop(
     resolvedSessionKey,
     lifecycleGeneration,
   });
+  const permissionChanges = createEmbeddedRunPermissionChanges(params);
   const failoverRetryController = createEmbeddedRunFailoverRetryController({
     runParams: params,
     provider,
@@ -359,6 +354,7 @@ export async function runPreparedEmbeddedLoop(
       let dispatch: Awaited<ReturnType<typeof prepareAndDispatchEmbeddedRunAttempt>>;
       try {
         dispatch = await prepareAndDispatchEmbeddedRunAttempt({
+          permissionChange: permissionChanges.forAttempt(),
           runInput: admittedRunInput,
           preparedRuntime,
           contextEngine,
@@ -424,6 +420,14 @@ export async function runPreparedEmbeddedLoop(
       bootstrapPromptWarningSignaturesSeen = normalizedAttempt.bootstrapPromptWarningSignaturesSeen;
       lastRunPromptUsage = normalizedAttempt.lastRunPromptUsage;
       accumulatedReplayState = normalizedAttempt.replayState;
+      if (permissionChanges.prepareRestart()) {
+        input.laneController.throwIfAborted();
+        sessionPromptState.continueFromCurrentTranscript();
+        // Operator-directed continuation is not a failed-model retry. The old
+        // attempt's usage and tool evidence were normalized above, not replayed.
+        recordRunRetry(runRetryBudget, "progress_continuation");
+        continue;
+      }
       const {
         attempt,
         sessionIdUsed,
@@ -672,53 +676,13 @@ export async function runPreparedEmbeddedLoop(
       return terminalResolution.result;
     }
   } finally {
-    if (params.isFinalFallbackAttempt !== false) {
-      await maybeEmitFastModeAutoResetBestEffort();
-    }
-    forgetPromptBuildDrainCacheForRun(params.runId);
-    clearProviderPromptState(params.runId);
-    stopRuntimeAuthRefreshTimer();
-    if (ownsContextEngineLogicalTurnLease) {
-      await runAgentCleanupStep({
-        runId: params.runId,
-        sessionId: params.sessionId,
-        step: "context-engine-dispose",
-        log,
-        cleanup: async () => {
-          await contextEngineLogicalTurnLease.dispose();
-        },
-      });
-    }
-    if (params.cleanupBundleMcpOnRunEnd === true) {
-      await runAgentCleanupStep({
-        runId: params.runId,
-        sessionId: params.sessionId,
-        step: "bundle-mcp-retire",
-        log,
-        cleanup: async () => {
-          const onError = (errorLocal: unknown, sessionId: string) => {
-            log.warn(
-              `bundle-mcp cleanup failed after run for ${sessionId}: ${formatErrorMessage(errorLocal)}`,
-            );
-          };
-          const retiredBySessionKey = await retireSessionMcpRuntimeForSessionKey({
-            sessionKey: params.sessionKey,
-            reason: "embedded-run-end",
-            // MCP App views hold bounded leases so their bridge can remain
-            // usable after a one-shot gateway run returns.
-            preserveActiveLeases: true,
-            onError,
-          });
-          if (!retiredBySessionKey) {
-            await retireSessionMcpRuntime({
-              sessionId: params.sessionId,
-              reason: "embedded-run-end",
-              preserveActiveLeases: true,
-              onError,
-            });
-          }
-        },
-      });
-    }
+    await cleanupEmbeddedRunRuntime({
+      runParams: params,
+      closePermissionChanges: permissionChanges.close,
+      maybeEmitFastModeAutoResetBestEffort,
+      stopRuntimeAuthRefreshTimer,
+      ownsContextEngineLogicalTurnLease,
+      contextEngineLogicalTurnLease,
+    });
   }
 }

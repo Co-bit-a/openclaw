@@ -45,6 +45,7 @@ export async function prepareAndDispatchEmbeddedRunAttempt(input: {
   getPostCompactionAbortError: () => Error | undefined;
   setPostCompactionAbortController: (controller: AbortController | undefined) => void;
   clearPostCompactionAbortController: (controller: AbortController) => void;
+  permissionChange?: Parameters<typeof dispatchEmbeddedRunAttempt>[0]["permissionChange"];
 }) {
   const {
     runInput,
@@ -226,6 +227,7 @@ export async function prepareAndDispatchEmbeddedRunAttempt(input: {
   });
   const dispatchedAttempt = await dispatchEmbeddedRunAttempt({
     params,
+    permissionChange: input.permissionChange,
     runStartedAtMs: runInput.startedAtMs,
     transcriptOwnership: params.sessionManager
       ? { kind: "caller-owned", sessionManager: params.sessionManager }

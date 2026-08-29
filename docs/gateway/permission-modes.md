@@ -30,6 +30,17 @@ File tools recognize aliases of the session's trusted root and working directory
 
 New sessions, including managed worktree sessions, inherit the configured global or per-agent tool/exec policy when no mode is specified. Creating a worktree pins the working directory without selecting a permission mode. Explicit modes and modes already saved on existing sessions remain unchanged.
 
+## Change permissions during a task
+
+Choose a mode from the chat composer's **Permissions** menu. The picker shows **Applying permissions…** until the running task acknowledges the change. Other clients viewing the same session also see this pending state.
+
+- **Codex:** OpenClaw interrupts the active native turn and stops its background terminals, then continues in the same conversation with the new permissions and an internal **Permission change** notice. It does not reset the conversation or replay the original request.
+- **OpenClaw native runtime:** OpenClaw refreshes the active tool policy without restarting the conversation. Subsequent tool calls use the updated permissions.
+
+Pending approvals from the old permissions are canceled, not granted. Changing permissions does not undo completed writes or other side effects. Commands and background processes that have already started are not rolled back.
+
+Active CLI-backed runs and runs whose entire agent executes on a worker (`worker-turn`) do not support live permission changes. OpenClaw rejects the change before saving it. Stop the task, change permissions, then continue in the same session. Worker placements that run only remote commands (`remote-exec`) follow the behavior of their locally running agent runtime.
+
 ## Policy precedence and clamping
 
 Session-wide exec policy belongs to the permission mode. When the mode is unset, normal global or per-agent configuration applies. `/exec security=... ask=...` applies only to its message and can only tighten an explicit session mode; `host` and `node` remain session placement defaults. See [Exec session overrides](/tools/exec#session-overrides-exec).

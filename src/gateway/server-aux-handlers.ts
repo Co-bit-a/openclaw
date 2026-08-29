@@ -214,10 +214,11 @@ export function createGatewayAuxHandlers(
     }
   };
   const unregisterApprovalAuthorityClosedObserver = registerAgentRunDelegatedAuthorityClosedHandler(
-    (authority) => {
+    (authority, approvalReason) => {
       try {
         cancelAgentRuntimeBoundApprovals({
           authority,
+          reason: approvalReason,
           manager: execApprovalManager,
           publish: (record, liveRecord) =>
             publishAuthorityClosure({ kind: "exec", record, liveRecord }),
@@ -228,6 +229,7 @@ export function createGatewayAuxHandlers(
       try {
         cancelAgentRuntimeBoundApprovals({
           authority,
+          reason: approvalReason,
           manager: pluginApprovalManager,
           publish: (record, liveRecord) =>
             publishAuthorityClosure({ kind: "plugin", record, liveRecord }),
@@ -235,7 +237,9 @@ export function createGatewayAuxHandlers(
       } catch (error) {
         params.log.error?.(`plugin approvals: authority-close settlement failed: ${String(error)}`);
       }
-      params.onAgentRunAuthorityClosed?.(authority);
+      if (!approvalReason) {
+        params.onAgentRunAuthorityClosed?.(authority);
+      }
     },
   );
   const unregisterWorkerTurnClaimClosedObserver = params.registerWorkerTurnClaimClosedHandler?.(
@@ -266,7 +270,10 @@ export function createGatewayAuxHandlers(
     unregisterWorkerTurnClaimClosedObserver?.();
     unregisterApprovalAuthorityClosedObserver();
   };
-  const cancelRunBoundApprovals = (runId: string, context: GatewayRequestContext): number => {
+  const cancelRunBoundApprovals = (
+    target: string | AgentRunDelegatedAuthority,
+    context: GatewayRequestContext,
+  ): number => {
     const publish = (
       kind: ChannelApprovalKind,
       record: Parameters<typeof publishAppliedApprovalResolution>[0]["record"],
@@ -286,11 +293,27 @@ export function createGatewayAuxHandlers(
         );
       });
     };
-    return cancelUnboundRunApprovals({
-      runId,
-      manager: execApprovalManager,
-      publish: (record, liveRecord) => publish("exec", record, liveRecord),
-    });
+    if (typeof target === "string") {
+      return cancelUnboundRunApprovals({
+        runId: target,
+        manager: execApprovalManager,
+        publish: (record, liveRecord) => publish("exec", record, liveRecord),
+      });
+    }
+    return (
+      cancelAgentRuntimeBoundApprovals({
+        authority: target,
+        reason: "permission-change",
+        manager: execApprovalManager,
+        publish: (record, liveRecord) => publish("exec", record, liveRecord),
+      }) +
+      cancelAgentRuntimeBoundApprovals({
+        authority: target,
+        reason: "permission-change",
+        manager: pluginApprovalManager,
+        publish: (record, liveRecord) => publish("plugin", record, liveRecord),
+      })
+    );
   };
   const systemAgentApprovalManager = createApprovalManager<SystemAgentApprovalRequestPayload>(
     "system-agent",

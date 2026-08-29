@@ -30,6 +30,7 @@ import {
   createEmbeddedAttemptExternalAbortController,
   type EmbeddedAttemptAbortStatePort,
 } from "./attempt-finalize.js";
+import { createPromptBuildToolPolicy } from "./attempt-prompt-support.js";
 import { prepareEmbeddedAttemptSessionRuntime } from "./attempt-session-runtime-prepare.js";
 import { cleanupEmbeddedAttemptSessionPhase } from "./attempt-session-settle.js";
 import {
@@ -73,6 +74,7 @@ export async function runEmbeddedAttempt(
     resolvedWorkspace,
     sandbox,
     sandboxSessionKey,
+    sessionPermissionRoot,
     sessionPermissionPolicy,
     sessionAgentId,
   } = await measureEmbeddedAgentPreparation(
@@ -212,6 +214,7 @@ export async function runEmbeddedAttempt(
           sandbox,
           sandboxSessionKey,
           sessionPermissionPolicy,
+          sessionPermissionRoot,
           sessionAgentId,
           skillUsagePaths,
           skillsSnapshot: skillsSnapshotForRun,
@@ -402,6 +405,7 @@ export async function runEmbeddedAttempt(
                 toolSearchCatalogRef,
                 toolSearchRuntimeConfig,
                 uncompactedEffectiveTools,
+                getToolAbortSignal: () => preparedToolBase.toolAbortSignal,
               },
               getCurrentAttemptPluginMetadataSnapshot,
               markStage: (stage) => prepStages.mark(stage),
@@ -452,6 +456,29 @@ export async function runEmbeddedAttempt(
           }),
         { config: params.config },
       );
+      const promptToolPolicy = createPromptBuildToolPolicy({
+        session: preparedSessionRuntime.agentSession.activeSession,
+        effectiveTools,
+        uncompactedEffectiveTools,
+        tools: preparedBundleTools.tools,
+        catalogRef: preparedToolBase.toolSearchCatalogRef,
+        codeModeControlsEnabled: preparedToolBase.codeModeControlsEnabledForRun,
+        coreReadAuthorized: preparedSessionRuntime.agentSession.coreReadAuthorized,
+        onApplied: (surface) => {
+          const allowedNames = new Set([
+            ...surface.activeToolNames,
+            ...surface.uncompactedEffectiveTools.map((tool) => tool.name),
+          ]);
+          preparedToolCatalog.applyPromptToolPolicy(allowedNames);
+          preparedSessionRuntime.agentSession.setCodeModeReconciliationReadAuthorized(
+            surface.coreReadAuthorized,
+          );
+        },
+        forceToolNames: [
+          ...(preparedToolBase.forceDirectMessageTool ? ["message"] : []),
+          ...(params.swarmCollector && params.swarmOutputSchema ? ["structured_output"] : []),
+        ],
+      });
       const executionResult = await runEmbeddedAttemptExecutionPhase({
         attempt: params,
         ...(activeContextEngine ? { activeContextEngine } : {}),
@@ -468,6 +495,7 @@ export async function runEmbeddedAttempt(
           systemPrompt: preparedSystemPrompt,
           toolBase: preparedToolBase,
           toolCatalog: preparedToolCatalog,
+          promptToolPolicy,
         },
         sessionLock: {
           compactionTimeoutMs,
@@ -486,6 +514,20 @@ export async function runEmbeddedAttempt(
         diagnostics: { diagnosticTrace, runTrace },
         state: executionState,
         lifecycle: {
+          applyPermissionMode: (mode, revokeApprovals) => {
+            preparedToolBase.refreshPermissionMode(mode, revokeApprovals);
+            preparedBundleTools.refreshTools();
+            preparedToolCatalog.refreshTools();
+            preparedSessionRuntime.agentSession.refreshTools();
+            promptToolPolicy.refresh();
+            const refreshSystemPrompt = preparedSystemPrompt.refreshSystemPrompt;
+            preparedSessionRuntime.agentSession.setPermissionPromptRefresh(
+              refreshSystemPrompt
+                ? (prompt) => refreshSystemPrompt(prompt, promptToolPolicy.current.effectiveTools)
+                : undefined,
+            );
+            params.permissionChange?.recordApplied(mode);
+          },
           readYieldState: () => ({
             yieldAbortSettled,
             yieldDetected,
