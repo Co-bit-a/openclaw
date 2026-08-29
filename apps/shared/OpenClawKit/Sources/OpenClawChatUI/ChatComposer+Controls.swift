@@ -76,6 +76,7 @@ extension OpenClawChatComposer {
         .help(String(localized: "Fast responses"))
         .disabled(self.viewModel.isUpdatingSessionSettings)
     }
+
     var modelPicker: some View {
         // Sections come from an O(n) recompute over the catalog; bind once per body eval.
         let sections = self.viewModel.modelPickerSections

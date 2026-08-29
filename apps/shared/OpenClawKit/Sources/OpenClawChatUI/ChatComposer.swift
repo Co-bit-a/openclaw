@@ -732,7 +732,10 @@ struct OpenClawChatComposer: View {
         }
 
         if let talkControl, ChatCameraFlipButton.isAvailable(for: talkControl) {
-            ChatCameraFlipButton(control: talkControl, size: self.cleanControlHeight)
+            ChatCameraFlipButton(
+                control: talkControl,
+                controlHeight: self.cleanControlHeight,
+                visualSize: self.cleanIconControlSize)
         }
     }
 
