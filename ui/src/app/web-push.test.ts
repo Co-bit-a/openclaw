@@ -62,7 +62,7 @@ describe("web push reconnect", () => {
     const coordinatorRuns: string[] = [];
     const coordinator = {
       reset: () => {},
-      run: async (key: string, task: () => Promise<void>) => {
+      run: async (key: string, task: () => Promise<unknown>) => {
         coordinatorRuns.push(key);
         await task();
       },
@@ -94,7 +94,9 @@ describe("web push reconnect", () => {
     enableWebPush(getSubscription);
     const coordinator = {
       reset: () => {},
-      run: async (_key: string, task: () => Promise<void>) => await task(),
+      run: async (_key: string, task: () => Promise<unknown>) => {
+        await task();
+      },
       synchronize: () => {},
     } satisfies ConnectionBootstrapCoordinator;
     const request = vi.fn<RequestFn>(async () => ({}));

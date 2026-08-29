@@ -92,10 +92,13 @@ export async function finalizeDispatchAndAudit(state: ExecuteDispatchReadyState)
       pendingContinuationSettlement?.statusPayload === reply
         ? pendingContinuationSettlement
         : undefined;
+    let continuationSettlementAttempted = false;
+    let continuationSettlementRegistered = false;
     const settleContinuation = async (statusDelivered: boolean) => {
-      if (!continuationSettlement) {
+      if (!continuationSettlement || continuationSettlementAttempted) {
         return;
       }
+      continuationSettlementAttempted = true;
       try {
         await continuationSettlement.settle(statusDelivered);
       } catch (error) {
@@ -112,90 +115,98 @@ export async function finalizeDispatchAndAudit(state: ExecuteDispatchReadyState)
       }
     };
     const releaseContinuationSettlement = () => settleContinuation(false);
-    throwIfDispatchOperationAborted();
-    // Durable reasoning is a channel-owned lane; generic channels keep the
-    // historical suppression unless they explicitly opt in.
-    if (reply.isReasoning === true && !state.reasoningPayloadsEnabled) {
-      await suppressPendingFinalDelivery(reply);
-      await releaseContinuationSettlement();
-      continue;
-    }
-    if (reply.isCommentary === true && !state.commentaryPayloadsEnabled) {
-      await suppressPendingFinalDelivery(reply);
-      await releaseContinuationSettlement();
-      continue;
-    }
-    if (suppressDelivery && !shouldDeliverDespiteSourceReplySuppression(reply, state)) {
-      if (hasOutboundReplyContent(reply, { trimText: true })) {
-        logVerbose(
-          [
-            `dispatch-from-config: final reply suppressed by ${state.deliverySuppressionReason || "source delivery policy"}`,
-            `(session=${state.acpDispatchSessionKey ?? sessionKey ?? "unknown"}`,
-            `provider=${ctx.Provider ?? "unknown"}`,
-            `surface=${ctx.Surface ?? "unknown"}`,
-            `chatType=${chatType ?? "unknown"}`,
-            `inboundEventKind=${ctx.InboundEventKind ?? "unknown"}`,
-            `message=${ctx.MessageSidFull ?? ctx.MessageSid ?? "unknown"}`,
-            `${formatSuppressedReplyPayloadForLog(reply)})`,
-          ].join(" "),
-        );
+    try {
+      throwIfDispatchOperationAborted();
+      // Durable reasoning is a channel-owned lane; generic channels keep the
+      // historical suppression unless they explicitly opt in.
+      if (reply.isReasoning === true && !state.reasoningPayloadsEnabled) {
+        await suppressPendingFinalDelivery(reply);
+        await releaseContinuationSettlement();
+        continue;
       }
-      await suppressPendingFinalDelivery(reply);
-      await releaseContinuationSettlement();
-      continue;
-    }
-    const finalPayloadDedupeKey = createFinalDispatchPayloadDedupeKey(reply);
-    if (sentFinalPayloadDedupeKeys.has(finalPayloadDedupeKey)) {
-      await suppressPendingFinalDelivery(reply);
-      await releaseContinuationSettlement();
-      continue;
-    }
-    sentFinalPayloadDedupeKeys.add(finalPayloadDedupeKey);
-    const shouldAttachDeferredText = deferFinalTtsText && isReplyPayloadTerminalContent(reply);
-    const finalReply = await state.sendFinalPayload(reply, {
-      deliveryId: String(replyIndex),
-      ...(shouldAttachDeferredText
-        ? {
-            deferredTtsText: deferredTtsTextPending,
-          }
-        : {}),
-    });
-    if (finalReply.suppressionReason) {
-      channelTransformSuppressedFinal ||= finalReply.suppressionReason === "channel_transform";
-      await releaseContinuationSettlement();
-      continue;
-    }
-    acceptedFinal = true;
-    if (shouldAttachDeferredText) {
-      deferredTtsTextPending = "";
-    }
-    if (finalReply.dedupedAgainstBlock) {
-      // The delivering block already settled into the turn ledger.
-      await suppressPendingFinalDelivery(reply);
-      await releaseContinuationSettlement();
-      continue;
-    }
-    attemptedFinalDelivery = true;
-    queuedFinal = finalReply.queuedFinal || queuedFinal;
-    routedFinalCount += finalReply.routedFinalCount;
-    if (finalReply.queuedFinal) {
-      if (finalReply.dispatcherOutcome) {
-        finalDeliveries.push(finalReply.dispatcherOutcome);
-      } else {
-        allQueuedFinalsObserved = false;
+      if (reply.isCommentary === true && !state.commentaryPayloadsEnabled) {
+        await suppressPendingFinalDelivery(reply);
+        await releaseContinuationSettlement();
+        continue;
       }
-    }
-    if (continuationSettlement) {
+      if (suppressDelivery && !shouldDeliverDespiteSourceReplySuppression(reply, state)) {
+        if (hasOutboundReplyContent(reply, { trimText: true })) {
+          logVerbose(
+            [
+              `dispatch-from-config: final reply suppressed by ${state.deliverySuppressionReason || "source delivery policy"}`,
+              `(session=${state.acpDispatchSessionKey ?? sessionKey ?? "unknown"}`,
+              `provider=${ctx.Provider ?? "unknown"}`,
+              `surface=${ctx.Surface ?? "unknown"}`,
+              `chatType=${chatType ?? "unknown"}`,
+              `inboundEventKind=${ctx.InboundEventKind ?? "unknown"}`,
+              `message=${ctx.MessageSidFull ?? ctx.MessageSid ?? "unknown"}`,
+              `${formatSuppressedReplyPayloadForLog(reply)})`,
+            ].join(" "),
+          );
+        }
+        await suppressPendingFinalDelivery(reply);
+        await releaseContinuationSettlement();
+        continue;
+      }
+      const finalPayloadDedupeKey = createFinalDispatchPayloadDedupeKey(reply);
+      if (sentFinalPayloadDedupeKeys.has(finalPayloadDedupeKey)) {
+        await suppressPendingFinalDelivery(reply);
+        await releaseContinuationSettlement();
+        continue;
+      }
+      sentFinalPayloadDedupeKeys.add(finalPayloadDedupeKey);
+      const shouldAttachDeferredText = deferFinalTtsText && isReplyPayloadTerminalContent(reply);
+      const finalReply = await state.sendFinalPayload(reply, {
+        deliveryId: String(replyIndex),
+        ...(shouldAttachDeferredText
+          ? {
+              deferredTtsText: deferredTtsTextPending,
+            }
+          : {}),
+      });
+      if (finalReply.suppressionReason) {
+        channelTransformSuppressedFinal ||= finalReply.suppressionReason === "channel_transform";
+        await releaseContinuationSettlement();
+        continue;
+      }
+      acceptedFinal = true;
+      if (shouldAttachDeferredText) {
+        deferredTtsTextPending = "";
+      }
+      if (finalReply.dedupedAgainstBlock) {
+        // The delivering block already settled into the turn ledger.
+        await suppressPendingFinalDelivery(reply);
+        await releaseContinuationSettlement();
+        continue;
+      }
+      attemptedFinalDelivery = true;
+      queuedFinal = finalReply.queuedFinal || queuedFinal;
+      routedFinalCount += finalReply.routedFinalCount;
       if (finalReply.queuedFinal) {
-        registerReplyDispatcherSettledTask(dispatcher, async () => {
-          const outcome = await finalReply.dispatcherOutcome;
-          // A post-send error can leave visibility unknown. Only an acknowledged
-          // status may yield the requester and hold child completion delivery.
-          await settleContinuation(outcome === "delivered");
-        });
-      } else {
-        await settleContinuation(finalReply.routedFinalCount > 0);
+        if (finalReply.dispatcherOutcome) {
+          finalDeliveries.push(finalReply.dispatcherOutcome);
+        } else {
+          allQueuedFinalsObserved = false;
+        }
       }
+      if (continuationSettlement) {
+        if (finalReply.queuedFinal) {
+          registerReplyDispatcherSettledTask(dispatcher, async () => {
+            const outcome = await finalReply.dispatcherOutcome;
+            // A post-send error can leave visibility unknown. Only an acknowledged
+            // status may yield the requester and hold child completion delivery.
+            await settleContinuation(outcome === "delivered");
+          });
+          continuationSettlementRegistered = true;
+        } else {
+          await settleContinuation(finalReply.routedFinalCount > 0);
+        }
+      }
+    } catch (error) {
+      if (!continuationSettlementRegistered) {
+        await releaseContinuationSettlement();
+      }
+      throw error;
     }
   }
   const channelTransformSuppressed =

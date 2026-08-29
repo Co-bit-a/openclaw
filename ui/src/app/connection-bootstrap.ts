@@ -47,17 +47,16 @@ export function createConnectionBootstrapCoordinator(): ConnectionBootstrapCoord
       } catch (error) {
         work = Promise.reject(error instanceof Error ? error : new Error(String(error)));
       }
-      void work
-        .then(task.resolve, () => {
-          if (task.generation === generation) {
-            tasks.delete(task.key);
-          }
-          task.resolve();
-        })
-        .finally(() => {
-          active -= 1;
-          drain();
-        });
+      const finish = () => {
+        if (task.generation === generation) {
+          tasks.delete(task.key);
+        }
+        task.resolve();
+      };
+      void work.then(finish, finish).finally(() => {
+        active -= 1;
+        drain();
+      });
     }
   };
 

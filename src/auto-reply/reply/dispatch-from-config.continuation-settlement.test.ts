@@ -197,6 +197,58 @@ describe("accepted continuation status delivery", () => {
     expect(settle).toHaveBeenCalledExactlyOnceWith(false);
   });
 
+  it("releases an accepted continuation when finalization aborts before status dispatch", async () => {
+    const abortController = new AbortController();
+    const statusPayload = { text: "Continuing work; the result will follow." };
+    const settle = vi.fn(async () => {});
+    const dispatcher = createReplyDispatcher({ deliver: vi.fn() });
+
+    await withReplyDispatcher({
+      dispatcher,
+      run: () =>
+        dispatchReplyFromConfig({
+          ctx: createHookCtx(),
+          cfg: emptyConfig,
+          dispatcher,
+          replyOptions: { abortSignal: abortController.signal },
+          replyResolver: async (_ctx, opts) => {
+            opts?.onPendingContinuation?.({ statusPayload, settle });
+            abortController.abort();
+            return statusPayload;
+          },
+        }),
+    });
+
+    expect(settle).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
+  it("releases an accepted continuation when status dispatch rejects before queueing", async () => {
+    const statusPayload = { text: "Continuing work; the result will follow." };
+    const settle = vi.fn(async () => {});
+    const dispatcher = createReplyDispatcher({ deliver: vi.fn() });
+    vi.spyOn(dispatcher, "sendFinalReply").mockImplementation(() => {
+      throw new Error("queue unavailable");
+    });
+
+    await expect(
+      withReplyDispatcher({
+        dispatcher,
+        run: () =>
+          dispatchReplyFromConfig({
+            ctx: createHookCtx(),
+            cfg: emptyConfig,
+            dispatcher,
+            replyResolver: async (_ctx, opts) => {
+              opts?.onPendingContinuation?.({ statusPayload, settle });
+              return statusPayload;
+            },
+          }),
+      }),
+    ).rejects.toThrow("queue unavailable");
+
+    expect(settle).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
   it("clears pending final delivery when abort fires after a successful final send (#89115)", async () => {
     sessionStoreMocks.currentEntry = {
       sessionId: "session-1",

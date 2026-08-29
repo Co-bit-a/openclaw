@@ -290,16 +290,17 @@ export class ShellGatewayOwner {
     this.updateGatewaySessionKey(snapshot);
     const context = this.host.context;
     if (snapshot.phase === "connected" && context) {
-      void context.connectionBootstrap.run("runtime-config", async () => {
+      const connectionBootstrap = context.connectionBootstrap;
+      void connectionBootstrap.run("runtime-config", async () => {
         await this.ensureRuntimeConfig(snapshot, context.runtimeConfig);
         await this.refreshProfileAppearancePrefs(context);
       });
       if (this.host.routeState.routeId && !context.agents.state.agentsList) {
-        void context.connectionBootstrap.run("agents", () =>
+        void connectionBootstrap.run("agents", () =>
           this.ensureAgentsList(snapshot, context.agents),
         );
       }
-      void context.connectionBootstrap.run("outbox", () => this.host.outboxStoreImport.load());
+      void connectionBootstrap.run("outbox", () => this.host.outboxStoreImport.load());
     }
     if (previousPhase !== "connected" && snapshot.phase === "connected") {
       i18n.retryPendingLocale();

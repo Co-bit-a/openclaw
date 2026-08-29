@@ -67,7 +67,9 @@ describe("Control UI refresh nudge", () => {
     );
     const coordinator = {
       reset: vi.fn(),
-      run: vi.fn(async (_key: string, task: () => Promise<void>) => await task()),
+      run: vi.fn(async (_key: string, task: () => Promise<unknown>) => {
+        await task();
+      }),
       synchronize: vi.fn(),
     } satisfies ConnectionBootstrapCoordinator;
     const harness = createGatewayHarness(null, false);

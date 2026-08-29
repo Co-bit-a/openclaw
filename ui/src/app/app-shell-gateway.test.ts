@@ -33,7 +33,7 @@ function createProfileAppearanceGateway(profileId: string | null) {
   const refreshTheme = vi.fn();
   const connectionBootstrap = {
     reset: vi.fn(),
-    run: (_key: string, task: () => Promise<void>) => task(),
+    run: (_key: string, task: () => Promise<unknown>) => task(),
     synchronize: vi.fn(),
   };
   const context = {
