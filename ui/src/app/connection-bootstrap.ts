@@ -5,14 +5,13 @@ const MAX_CONNECTION_BOOTSTRAP_CONCURRENCY = 2;
 type QueuedBootstrapTask = {
   generation: number;
   key: string;
-  reject: (reason?: unknown) => void;
   resolve: () => void;
-  run: () => Promise<void>;
+  run: () => Promise<unknown>;
 };
 
 export type ConnectionBootstrapCoordinator = {
   reset: () => void;
-  run: (key: string, task: () => Promise<void>) => Promise<void>;
+  run: (key: string, task: () => Promise<unknown>) => Promise<void>;
   synchronize: (params: { client: object | null; connected: boolean }) => void;
 };
 
@@ -42,18 +41,18 @@ export function createConnectionBootstrapCoordinator(): ConnectionBootstrapCoord
         return;
       }
       active += 1;
-      let work: Promise<void>;
+      let work: Promise<unknown>;
       try {
         work = task.run();
       } catch (error) {
-        work = Promise.reject(error);
+        work = Promise.reject(error instanceof Error ? error : new Error(String(error)));
       }
       void work
-        .then(task.resolve, (error: unknown) => {
+        .then(task.resolve, () => {
           if (task.generation === generation) {
             tasks.delete(task.key);
           }
-          task.reject(error);
+          task.resolve();
         })
         .finally(() => {
           active -= 1;
@@ -97,13 +96,11 @@ export function createConnectionBootstrapCoordinator(): ConnectionBootstrapCoord
         return current;
       }
       let resolve!: () => void;
-      let reject!: (reason?: unknown) => void;
-      const scheduled = new Promise<void>((resolveTask, rejectTask) => {
+      const scheduled = new Promise<void>((resolveTask) => {
         resolve = resolveTask;
-        reject = rejectTask;
       });
       tasks.set(key, scheduled);
-      queued.push({ generation, key, reject, resolve, run: task });
+      queued.push({ generation, key, resolve, run: task });
       drain();
       return scheduled;
     },

@@ -290,24 +290,16 @@ export class ShellGatewayOwner {
     this.updateGatewaySessionKey(snapshot);
     const context = this.host.context;
     if (snapshot.phase === "connected" && context) {
-      void context.connectionBootstrap
-        .run("runtime-config", async () => {
-          await this.ensureRuntimeConfig(snapshot, context.runtimeConfig);
-          await this.refreshProfileAppearancePrefs(context);
-        })
-        .catch(() => undefined);
+      void context.connectionBootstrap.run("runtime-config", async () => {
+        await this.ensureRuntimeConfig(snapshot, context.runtimeConfig);
+        await this.refreshProfileAppearancePrefs(context);
+      });
       if (this.host.routeState.routeId && !context.agents.state.agentsList) {
-        void context.connectionBootstrap
-          .run("agents", async () => {
-            await this.ensureAgentsList(snapshot, context.agents);
-          })
-          .catch(() => undefined);
+        void context.connectionBootstrap.run("agents", () =>
+          this.ensureAgentsList(snapshot, context.agents),
+        );
       }
-      void context.connectionBootstrap
-        .run("outbox", async () => {
-          await this.host.outboxStoreImport.load();
-        })
-        .catch(() => undefined);
+      void context.connectionBootstrap.run("outbox", () => this.host.outboxStoreImport.load());
     }
     if (previousPhase !== "connected" && snapshot.phase === "connected") {
       i18n.retryPendingLocale();

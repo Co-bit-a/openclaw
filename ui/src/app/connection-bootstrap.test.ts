@@ -73,4 +73,19 @@ describe("connection bootstrap coordinator", () => {
 
     expect(hydrate).toHaveBeenCalledOnce();
   });
+
+  it("releases failed work for another automatic attempt", async () => {
+    const coordinator = createConnectionBootstrapCoordinator();
+    coordinator.synchronize({ client: {}, connected: true });
+    const retry = vi.fn(async () => {});
+
+    await expect(
+      coordinator.run("runtime-config", async () => {
+        throw new Error("network unavailable");
+      }),
+    ).resolves.toBeUndefined();
+    await coordinator.run("runtime-config", retry);
+
+    expect(retry).toHaveBeenCalledOnce();
+  });
 });

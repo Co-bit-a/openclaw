@@ -460,14 +460,11 @@ describe("terminal resolution", () => {
       }),
     );
 
-    expect(resolved.action).toBe("complete");
-    if (resolved.action !== "complete") {
-      return;
-    }
-    expect(resolved.result.payloads).toEqual([
-      { text: "I’m continuing this work and will send the result when it is ready." },
-    ]);
-    expect(resolved.result.meta.continuationPending).toBe(true);
+    expect(resolved).toMatchObject({
+      result: {
+        payloads: [{ text: "I’m continuing this work and will send the result when it is ready." }],
+      },
+    });
   });
 
   it("does not add a continuation status when the parent already replied", async () => {

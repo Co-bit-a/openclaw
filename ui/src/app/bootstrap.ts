@@ -353,25 +353,18 @@ export function bootstrapApplication(
     const client = snapshot.client;
     if (lastPostConnectClient !== client) {
       lastPostConnectClient = client;
-      void connectionBootstrap
-        .run("config", async () => {
-          await config.refresh({
-            auth: {
-              hello: snapshot.hello,
-              settings: { token: gateway.connection.token },
-              password: gateway.connection.password,
-            },
-          });
-        })
-        .catch(() => undefined);
-      void connectionBootstrap
-        .run("session-observer", async () => {
-          await sendSessionObserverVisibility(
-            client,
-            loadChatObserverDisplayPreference() !== "off",
-          );
-        })
-        .catch(() => undefined);
+      void connectionBootstrap.run("config", () =>
+        config.refresh({
+          auth: {
+            hello: snapshot.hello,
+            settings: { token: gateway.connection.token },
+            password: gateway.connection.password,
+          },
+        }),
+      );
+      void connectionBootstrap.run("session-observer", () =>
+        sendSessionObserverVisibility(client, loadChatObserverDisplayPreference() !== "off"),
+      );
     }
     // Recovery scope resolves after hello, so dedupe its later publication independently.
     if (!client.recoveryScopeReady || lastRecoveryClient === client) {

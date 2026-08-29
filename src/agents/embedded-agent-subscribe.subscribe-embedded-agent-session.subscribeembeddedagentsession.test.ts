@@ -1894,6 +1894,7 @@ describe("subscribeEmbeddedAgentSession", () => {
           status: "accepted",
           runId: "run-child",
           childSessionKey: "agent:claude:subagent:child",
+          expectsCompletionMessage: true,
         },
       },
     });
@@ -1904,6 +1905,7 @@ describe("subscribeEmbeddedAgentSession", () => {
       {
         runId: "run-child",
         childSessionKey: "agent:claude:subagent:child",
+        expectsCompletionMessage: true,
       },
     ]);
 
