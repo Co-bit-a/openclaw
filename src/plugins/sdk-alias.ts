@@ -396,7 +396,7 @@ export function resolvePluginSdkAliasCandidateOrder(params: {
     return ["src", "dist"];
   }
   const normalizedModulePath = params.modulePath.replace(/\\/g, "/");
-  const isDistRuntime = normalizedModulePath.includes("/dist/");
+  const isDistRuntime = /\/dist(?:-runtime)?\//.test(normalizedModulePath);
   return isDistRuntime || params.isProduction ? ["dist", "src"] : ["src", "dist"];
 }
 
