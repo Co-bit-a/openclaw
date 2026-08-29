@@ -16,19 +16,14 @@ type RestartHealthSnapshot = {
   elapsedMs?: number;
 };
 
-const service = {
-  readCommand: vi.fn(),
-  readRuntime: vi.fn(),
-  restart: vi.fn(),
-  stop: vi.fn(),
-};
+const service = { readCommand: vi.fn(), readRuntime: vi.fn(), restart: vi.fn(), stop: vi.fn() };
 const isDefaultInstallIdentity = vi.hoisted(() => vi.fn(() => true));
 
-const runServiceStart = vi.fn();
-const runServiceRestart = vi.fn();
-const runServiceStop = vi.fn();
-const waitForGatewayHealthyListener = vi.fn();
-const waitForGatewayHealthyRestart = vi.fn();
+const runServiceStart = vi.fn(),
+  runServiceRestart = vi.fn(),
+  runServiceStop = vi.fn();
+const waitForGatewayHealthyListener = vi.fn(),
+  waitForGatewayHealthyRestart = vi.fn();
 const terminateStaleGatewayPids = vi.fn();
 const renderGatewayPortHealthDiagnostics = vi.fn(() => ["diag: unhealthy port"]);
 const renderRestartDiagnostics = vi.fn(() => ["diag: unhealthy runtime"]);
