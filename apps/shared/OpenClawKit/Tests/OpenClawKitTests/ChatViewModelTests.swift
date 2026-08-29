@@ -727,6 +727,7 @@ private actor TestChatTransportState {
     var sentSessionKeys: [String] = []
     var sentAgentIDs: [String?] = []
     var sentRoutingContracts: [String?] = []
+    var sentSettingsExpectations: [OpenClawChatSessionSettingsExpectation?] = []
     var sentMessages: [String] = []
     var sentRunIds: [String] = []
     var commandSessionKeys: [String] = []
@@ -948,8 +949,29 @@ private final class TestChatTransport: @unchecked Sendable, OpenClawChatTranspor
         idempotencyKey: String,
         attachments: [OpenClawChatAttachmentPayload]) async throws -> OpenClawChatSendResponse
     {
-        await self.state.sentAgentIDsAppend(agentID)
-        await self.state.sentRoutingContractsAppend(expectedSessionRoutingContract)
+        try await self.sendMessage(
+            sessionKey: sessionKey,
+            target: OpenClawChatSendTarget(
+                agentID: agentID,
+                expectedSessionRoutingContract: expectedSessionRoutingContract,
+                expectedSessionSettings: nil),
+            message: message,
+            thinking: thinking,
+            idempotencyKey: idempotencyKey,
+            attachments: attachments)
+    }
+
+    func sendMessage(
+        sessionKey: String,
+        target: OpenClawChatSendTarget,
+        message: String,
+        thinking: String,
+        idempotencyKey: String,
+        attachments: [OpenClawChatAttachmentPayload]) async throws -> OpenClawChatSendResponse
+    {
+        await self.state.sentAgentIDsAppend(target.agentID)
+        await self.state.sentRoutingContractsAppend(target.expectedSessionRoutingContract)
+        await self.state.sentSettingsExpectationsAppend(target.expectedSessionSettings)
         return try await self.sendMessage(
             sessionKey: sessionKey,
             message: message,
@@ -1243,6 +1265,10 @@ private final class TestChatTransport: @unchecked Sendable, OpenClawChatTranspor
         await self.state.sentRoutingContracts
     }
 
+    func sentSettingsExpectations() async -> [OpenClawChatSessionSettingsExpectation?] {
+        await self.state.sentSettingsExpectations
+    }
+
     func commandSessionKeys() async -> [String] {
         await self.state.commandSessionKeys
     }
@@ -1454,6 +1480,10 @@ extension TestChatTransportState {
 
     fileprivate func sentRoutingContractsAppend(_ v: String?) {
         self.sentRoutingContracts.append(v)
+    }
+
+    fileprivate func sentSettingsExpectationsAppend(_ value: OpenClawChatSessionSettingsExpectation?) {
+        self.sentSettingsExpectations.append(value)
     }
 
     fileprivate func sentMessagesAppend(_ v: String) {
@@ -7263,6 +7293,7 @@ struct ChatViewModelTests {
             skills: [skill, disabledSkill],
             skillsAvailable: true,
             permissionMutationAvailable: true,
+            sessionSettingsCASAvailable: true,
             toolOverrideMutationAvailable: true,
             canSelectFullPermission: true)
         let (transport, vm) = await makeViewModel(
@@ -7315,8 +7346,13 @@ struct ChatViewModelTests {
         }
         let patches = await transport.sessionSettingsPatches()
         #expect(patches.allSatisfy { $0.expectedSessionID == "sess-main" })
-        #expect(patches[0].permissionMode == .some(.full))
+        #expect((patches[0].permissionMode ?? nil) == .full)
+        #expect((patches[0].expectedPermissionMode ?? nil) == .guarded)
+        #expect(patches[0].expectedToolOverrides == nil)
+        #expect(patches[1].expectedPermissionMode == nil)
+        #expect(patches[1].expectedToolOverrides.map { $0 == nil } == true)
         #expect((patches[1].toolOverrides ?? nil)?.webSearch == false)
+        #expect((patches[2].expectedToolOverrides ?? nil)?.webSearch == false)
         #expect((patches[2].toolOverrides ?? nil)?.skills["release"] == false)
         #expect(await MainActor.run { vm.composerCapabilityNotice } ==
             "Tool changes apply to the next run.")
@@ -7327,7 +7363,8 @@ struct ChatViewModelTests {
         let releasePatch = AsyncGate()
         let catalog = OpenClawChatComposerCapabilityCatalog(
             sessionSettingsAvailable: true,
-            permissionMutationAvailable: true)
+            permissionMutationAvailable: true,
+            sessionSettingsCASAvailable: true)
         let (transport, vm) = await makeViewModel(
             historyResponses: [historyPayload(sessionId: "sess-main")],
             sessionsResponses: [sessionsResponse([
@@ -7368,9 +7405,113 @@ struct ChatViewModelTests {
         }
         #expect(await MainActor.run { vm.composerPermissionMode } == .guarded)
         #expect(await transport.sentRunIds().count == 1)
+        #expect(await transport.sentSettingsExpectations() == [
+            OpenClawChatSessionSettingsExpectation(
+                permissionMode: .guarded,
+                toolOverrides: nil),
+        ])
         let sentAgentIDs = await transport.sentAgentIDs()
         #expect(sentAgentIDs.count == 1)
         #expect(sentAgentIDs[0] == nil)
+    }
+
+    @Test func `failed restrictive composer patch blocks only its dependent send`() async throws {
+        let patchStarted = AsyncGate()
+        let catalog = OpenClawChatComposerCapabilityCatalog(
+            sessionSettingsAvailable: true,
+            permissionMutationAvailable: true,
+            sessionSettingsCASAvailable: true)
+        let (transport, vm) = await makeViewModel(
+            historyResponses: [historyPayload(sessionId: "sess-main")],
+            sessionsResponses: [sessionsResponse([
+                sessionEntry(
+                    key: "main",
+                    updatedAt: 1,
+                    sessionId: "sess-main",
+                    permissionMode: .full),
+            ])],
+            sessionSettingsPatchHook: { patch in
+                guard patch.permissionMode == .some(.guarded) else { return nil }
+                await patchStarted.open()
+                throw NSError(
+                    domain: "ChatViewModelTests",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Restriction was not saved."])
+            },
+            composerCapabilityCatalog: catalog)
+        try await loadAndWaitBootstrap(vm: vm, sessionId: "sess-main")
+        await vm.loadComposerCapabilities()
+
+        await MainActor.run {
+            vm.selectComposerPermissionMode(.guarded)
+            vm.input = "do not send with full access"
+            vm.send()
+        }
+        await patchStarted.wait()
+        try await waitUntil("failed restriction restores the draft") {
+            await MainActor.run {
+                vm.input == "do not send with full access" &&
+                    vm.errorText == "Restriction was not saved."
+            }
+        }
+
+        #expect(await transport.sentRunIds().isEmpty)
+        #expect(await MainActor.run { vm.composerPermissionMode } == .full)
+
+        await MainActor.run { vm.send() }
+        try await waitUntil("later send uses the visible unchanged permission") {
+            await transport.sentRunIds().count == 1
+        }
+        #expect(await transport.sentSettingsExpectations() == [
+            OpenClawChatSessionSettingsExpectation(
+                permissionMode: .full,
+                toolOverrides: nil),
+        ])
+    }
+
+    @Test func `session settings conflict preserves the draft before run admission`() async throws {
+        let catalog = OpenClawChatComposerCapabilityCatalog(
+            sessionSettingsAvailable: true,
+            permissionMutationAvailable: true,
+            sessionSettingsCASAvailable: true)
+        let (transport, vm) = await makeViewModel(
+            historyResponses: [historyPayload(sessionId: "sess-main")],
+            sessionsResponses: [sessionsResponse([
+                sessionEntry(
+                    key: "main",
+                    updatedAt: 1,
+                    sessionId: "sess-main",
+                    permissionMode: .guarded),
+            ])],
+            composerCapabilityCatalog: catalog,
+            sendMessageHook: { _ in
+                throw GatewayResponseError(
+                    method: "chat.send",
+                    code: "INVALID_REQUEST",
+                    message: "Session settings changed before send. Retry.",
+                    details: [
+                        "reason": AnyCodable(OpenClawChatSessionSettingsContract.changedErrorReason),
+                    ])
+            })
+        try await loadAndWaitBootstrap(vm: vm, sessionId: "sess-main")
+        await vm.loadComposerCapabilities()
+
+        await MainActor.run {
+            vm.input = "keep this draft"
+            vm.send()
+        }
+        try await waitUntil("settings conflict restores the draft") {
+            await MainActor.run {
+                vm.input == "keep this draft" &&
+                    vm.errorText?.contains("Session settings changed before send. Retry.") == true
+            }
+        }
+
+        #expect(await transport.sentSettingsExpectations() == [
+            OpenClawChatSessionSettingsExpectation(
+                permissionMode: .guarded,
+                toolOverrides: nil),
+        ])
     }
 
     @Test func `agent filtered skill can be enabled for the current session`() async throws {
@@ -7599,6 +7740,49 @@ struct ChatViewModelTests {
         })
     }
 
+    @Test func `unrelated sparse override preserves effective tool denial`() async throws {
+        let tool = OpenClawChatComposerTool(
+            name: "create_issue",
+            label: "Create issue",
+            sessionDenied: true)
+        let catalog = OpenClawChatComposerCapabilityCatalog(
+            sessionSettingsAvailable: true,
+            webSearchBaseEnabled: true,
+            webSearchAvailable: true,
+            connectors: [OpenClawChatComposerConnector(
+                name: "github",
+                baseEnabled: true,
+                tools: [tool])],
+            connectorsAvailable: true,
+            toolAccessAvailable: true,
+            toolOverrideMutationAvailable: true)
+        let (transport, vm) = await makeViewModel(
+            historyResponses: [historyPayload(sessionId: "sess-main")],
+            sessionsResponses: [sessionsResponse([
+                sessionEntry(
+                    key: "main",
+                    updatedAt: 1,
+                    sessionId: "sess-main",
+                    toolOverrides: OpenClawChatSessionToolOverrides(webSearch: false)),
+            ])],
+            composerCapabilityCatalog: catalog)
+        try await loadAndWaitBootstrap(vm: vm, sessionId: "sess-main")
+        await vm.loadComposerCapabilities()
+
+        #expect(await MainActor.run {
+            !vm.composerToolEnabled(server: "github", tool: "create_issue")
+        })
+        await MainActor.run { vm.toggleComposerTool(server: "github", tool: "create_issue") }
+        try await waitUntil("effective denial enable patch settles") {
+            guard await transport.sessionSettingsPatches().count == 1 else { return false }
+            return await MainActor.run { !vm.composerCapabilityMutationDisabled }
+        }
+
+        let patch = try #require(await transport.sessionSettingsPatches().first)
+        #expect((patch.toolOverrides ?? nil)?.webSearch == false)
+        #expect((patch.toolOverrides ?? nil)?.mcpToolsDeny["github"] == nil)
+    }
+
     @Test func `composer tool state toggles and clears an inherited effective denial`() async throws {
         let deniedTool = OpenClawChatComposerTool(
             name: "create_issue",
@@ -7657,7 +7841,7 @@ struct ChatViewModelTests {
                     !vm.composerToolEnabled(server: "github", tool: "create_issue")
             }
         }
-        #expect((await transport.sessionSettingsPatches()[1].toolOverrides ?? nil)?
+        #expect(await (transport.sessionSettingsPatches()[1].toolOverrides ?? nil)?
             .mcpToolsDeny["github"] == ["create_issue"])
 
         await MainActor.run { vm.clearComposerToolOverrides() }

@@ -300,6 +300,8 @@ public final class OpenClawChatViewModel {
     var lastSuccessfulSettingsPatchResultsByTarget: [ModelPatchTarget: OpenClawChatModelPatchResult] = [:]
     var completedModelPatchTargets: Set<ModelPatchTarget> = []
     var inFlightSettingsPatchCountsByTarget: [ModelPatchTarget: Int] = [:]
+    var capabilityPatchFailureRevisionsByTarget: [ModelPatchTarget: UInt64] = [:]
+    var capabilityPatchFailureMessagesByTarget: [ModelPatchTarget: String] = [:]
     private var settingsPatchRevisionsByTarget: [ModelPatchTarget: UInt64] = [:]
     private var settingsPatchWaitersByTarget: [ModelPatchTarget: [CheckedContinuation<Void, Never>]] = [:]
     @ObservationIgnored
@@ -1482,29 +1484,40 @@ extension OpenClawChatViewModel {
         agentID: String? = nil,
         sessionRoutingContract: String? = nil) async
     {
-        let target: ModelPatchTarget
+        let target = self.sessionSettingsPatchTarget(
+            in: sessionKey,
+            canonicalSessionKey: canonicalSessionKey,
+            agentID: agentID,
+            sessionRoutingContract: sessionRoutingContract)
+        await self.waitForPendingSessionSettings(for: target)
+    }
+
+    func sessionSettingsPatchTarget(
+        in sessionKey: String,
+        canonicalSessionKey: String?,
+        agentID: String?,
+        sessionRoutingContract: String?) -> ModelPatchTarget
+    {
         if canonicalSessionKey == nil,
            agentID == nil,
            sessionRoutingContract == nil,
            sessionKey == self.sessionKey
         {
             let session = self.currentSessionSnapshot()
-            target = modelPatchTarget(
+            return modelPatchTarget(
                 sessionKey: session.key,
                 canonicalSessionKey: currentSessionEntry()?.key,
                 agentID: session.deliveryAgentID,
                 sessionRoutingContract: session.sessionRoutingContract)
-        } else {
-            target = modelPatchTarget(
-                sessionKey: sessionKey,
-                canonicalSessionKey: canonicalSessionKey,
-                agentID: agentID,
-                sessionRoutingContract: sessionRoutingContract)
         }
-        await self.waitForPendingSessionSettings(for: target)
+        return modelPatchTarget(
+            sessionKey: sessionKey,
+            canonicalSessionKey: canonicalSessionKey,
+            agentID: agentID,
+            sessionRoutingContract: sessionRoutingContract)
     }
 
-    private func waitForPendingSessionSettings(for target: ModelPatchTarget) async {
+    func waitForPendingSessionSettings(for target: ModelPatchTarget) async {
         guard (self.inFlightSettingsPatchCountsByTarget[target] ?? 0) > 0 else { return }
         await withCheckedContinuation { continuation in
             self.settingsPatchWaitersByTarget[target, default: []].append(continuation)

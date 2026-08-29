@@ -182,15 +182,17 @@ struct IOSGatewayChatTransportTests {
         #expect(hello.supportsServerCapability(.chatSendRoutingContract))
         #expect(hello.supportsServerCapability(.sessionUnreadAckContract))
         #expect(!hello.supportsServerCapability(.sessionSettingsContract))
+        #expect(!hello.supportsServerCapability(.sessionSettingsCAS))
 
         let currentData = Data(
             String(decoding: data, as: UTF8.self)
                 .replacingOccurrences(
                     of: "session-unread-ack-contract\"]",
-                    with: "session-unread-ack-contract\",\"session-settings-contract\"]")
+                    with: "session-unread-ack-contract\",\"session-settings-contract\",\"session-settings-cas-v1\"]")
                 .utf8)
         let current = try JSONDecoder().decode(HelloOk.self, from: currentData)
         #expect(current.supportsServerCapability(.sessionSettingsContract))
+        #expect(current.supportsServerCapability(.sessionSettingsCAS))
     }
 
     @Test func `session mutations dispatch normalized selected agent targets`() async throws {
@@ -694,5 +696,4 @@ struct LocalFixtureChatTransportTests {
         #expect(session.permissionMode == .workspace)
         #expect(session.toolOverrides == overrides)
     }
-
 }

@@ -155,7 +155,9 @@ public struct OpenClawChatComposerCapabilityCatalog: Equatable, Sendable {
     public let connectorsAvailable: Bool
     public let toolAccessAvailable: Bool
     public let permissionMutationAvailable: Bool
+    public let sessionSettingsCASAvailable: Bool
     public let toolOverrideMutationAvailable: Bool
+    public let toolOverrideMutationRequiresGatewayUpgrade: Bool
     public let canSelectFullPermission: Bool
     public let loadFailureMessage: String?
 
@@ -171,7 +173,9 @@ public struct OpenClawChatComposerCapabilityCatalog: Equatable, Sendable {
         connectorsAvailable: Bool = false,
         toolAccessAvailable: Bool = false,
         permissionMutationAvailable: Bool = false,
+        sessionSettingsCASAvailable: Bool = false,
         toolOverrideMutationAvailable: Bool = false,
+        toolOverrideMutationRequiresGatewayUpgrade: Bool = false,
         canSelectFullPermission: Bool = false,
         loadFailureMessage: String? = nil)
     {
@@ -186,7 +190,9 @@ public struct OpenClawChatComposerCapabilityCatalog: Equatable, Sendable {
         self.connectorsAvailable = connectorsAvailable
         self.toolAccessAvailable = toolAccessAvailable
         self.permissionMutationAvailable = permissionMutationAvailable
+        self.sessionSettingsCASAvailable = sessionSettingsCASAvailable
         self.toolOverrideMutationAvailable = toolOverrideMutationAvailable
+        self.toolOverrideMutationRequiresGatewayUpgrade = toolOverrideMutationRequiresGatewayUpgrade
         self.canSelectFullPermission = canSelectFullPermission
         self.loadFailureMessage = loadFailureMessage
     }

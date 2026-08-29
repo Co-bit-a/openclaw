@@ -131,6 +131,8 @@ public struct OpenClawChatModelChoice: Identifiable, Codable, Sendable, Hashable
 public struct OpenClawChatSessionSettingsPatch: Sendable, Equatable {
     /// Outer optional means unchanged; inner optional clears the override.
     public let expectedSessionID: String?
+    public let expectedPermissionMode: OpenClawChatPermissionMode??
+    public let expectedToolOverrides: OpenClawChatSessionToolOverrides??
     public let model: String??
     public let thinkingLevel: String??
     public let fastMode: OpenClawChatFastMode??
@@ -140,6 +142,8 @@ public struct OpenClawChatSessionSettingsPatch: Sendable, Equatable {
 
     public init(
         expectedSessionID: String? = nil,
+        expectedPermissionMode: OpenClawChatPermissionMode?? = nil,
+        expectedToolOverrides: OpenClawChatSessionToolOverrides?? = nil,
         model: String?? = nil,
         thinkingLevel: String?? = nil,
         fastMode: OpenClawChatFastMode?? = nil,
@@ -148,6 +152,8 @@ public struct OpenClawChatSessionSettingsPatch: Sendable, Equatable {
         toolOverrides: OpenClawChatSessionToolOverrides?? = nil)
     {
         self.expectedSessionID = expectedSessionID
+        self.expectedPermissionMode = expectedPermissionMode
+        self.expectedToolOverrides = expectedToolOverrides
         self.model = model
         self.thinkingLevel = thinkingLevel
         self.fastMode = fastMode
@@ -156,15 +162,51 @@ public struct OpenClawChatSessionSettingsPatch: Sendable, Equatable {
         self.toolOverrides = toolOverrides
     }
 
-    func withExpectedSessionID(_ expectedSessionID: String) -> Self {
+    func withExpectedSessionID(
+        _ expectedSessionID: String,
+        expectedPermissionMode: OpenClawChatPermissionMode?? = nil,
+        expectedToolOverrides: OpenClawChatSessionToolOverrides?? = nil) -> Self
+    {
         Self(
             expectedSessionID: expectedSessionID,
+            expectedPermissionMode: expectedPermissionMode,
+            expectedToolOverrides: expectedToolOverrides,
             model: self.model,
             thinkingLevel: self.thinkingLevel,
             fastMode: self.fastMode,
             verboseLevel: self.verboseLevel,
             permissionMode: self.permissionMode,
             toolOverrides: self.toolOverrides)
+    }
+}
+
+/// Authority-bearing session settings a chat turn must still match at admission.
+public struct OpenClawChatSessionSettingsExpectation: Hashable, Sendable {
+    public let permissionMode: OpenClawChatPermissionMode?
+    public let toolOverrides: OpenClawChatSessionToolOverrides?
+
+    public init(
+        permissionMode: OpenClawChatPermissionMode?,
+        toolOverrides: OpenClawChatSessionToolOverrides?)
+    {
+        self.permissionMode = permissionMode
+        self.toolOverrides = toolOverrides
+    }
+}
+
+public struct OpenClawChatSendTarget: Hashable, Sendable {
+    public let agentID: String?
+    public let expectedSessionRoutingContract: String?
+    public let expectedSessionSettings: OpenClawChatSessionSettingsExpectation?
+
+    public init(
+        agentID: String?,
+        expectedSessionRoutingContract: String?,
+        expectedSessionSettings: OpenClawChatSessionSettingsExpectation?)
+    {
+        self.agentID = agentID
+        self.expectedSessionRoutingContract = expectedSessionRoutingContract
+        self.expectedSessionSettings = expectedSessionSettings
     }
 }
 

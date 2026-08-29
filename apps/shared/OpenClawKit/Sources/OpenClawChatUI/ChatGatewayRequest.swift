@@ -352,13 +352,16 @@ public enum OpenClawChatGatewayRequests {
         sessionKey: String,
         agentID: String?,
         expectedSessionID: String? = nil,
+        expectedPermissionMode: OpenClawChatPermissionMode?? = nil,
+        expectedToolOverrides: OpenClawChatSessionToolOverrides?? = nil,
         model: String?? = nil,
         thinkingLevel: String?? = nil,
         fastMode: OpenClawChatFastMode?? = nil,
         verboseLevel: String?? = nil,
         permissionMode: OpenClawChatPermissionMode?? = nil,
         toolOverrides: OpenClawChatSessionToolOverrides?? = nil,
-        supportsSessionSettingsContract: Bool = false) -> OpenClawChatGatewayRequest
+        supportsSessionSettingsContract: Bool = false,
+        supportsSessionSettingsCAS: Bool = false) -> OpenClawChatGatewayRequest
     {
         var params = self.sessionParams(sessionKey: sessionKey, agentID: agentID)
         if let model {
@@ -381,6 +384,14 @@ public enum OpenClawChatGatewayRequests {
             if let toolOverrides {
                 params["toolOverrides"] = toolOverrides.map(self.toolOverridesValue) ?? AnyCodable(NSNull())
             }
+        }
+        if supportsSessionSettingsCAS, let expectedToolOverrides {
+            params["expectedToolOverrides"] = expectedToolOverrides
+                .map(self.toolOverridesValue) ?? AnyCodable(NSNull())
+        }
+        if supportsSessionSettingsCAS, let expectedPermissionMode {
+            params["expectedPermissionMode"] = expectedPermissionMode
+                .map { AnyCodable($0.rawValue) } ?? AnyCodable(NSNull())
         }
         return OpenClawChatGatewayRequest(
             method: "sessions.patch",
@@ -652,6 +663,8 @@ public enum OpenClawChatGatewayRequests {
         sessionKey: String,
         agentID: String?,
         expectedSessionRoutingContract: String?,
+        expectedSessionSettings: OpenClawChatSessionSettingsExpectation? = nil,
+        supportsSessionSettingsCAS: Bool = false,
         message: String,
         thinking: String?,
         idempotencyKey: String,
@@ -670,6 +683,12 @@ public enum OpenClawChatGatewayRequests {
             to: &params,
             key: "expectedSessionRoutingContract")
         self.add(thinking, to: &params, key: "thinking")
+        if supportsSessionSettingsCAS, let expectedSessionSettings {
+            params["expectedPermissionMode"] = expectedSessionSettings.permissionMode
+                .map { AnyCodable($0.rawValue) } ?? AnyCodable(NSNull())
+            params["expectedToolOverrides"] = expectedSessionSettings.toolOverrides
+                .map(self.toolOverridesValue) ?? AnyCodable(NSNull())
+        }
         if let runTimeoutMs {
             params["timeoutMs"] = AnyCodable(runTimeoutMs)
         }

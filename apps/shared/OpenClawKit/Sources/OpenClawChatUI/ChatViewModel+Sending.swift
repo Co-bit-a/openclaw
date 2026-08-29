@@ -629,7 +629,16 @@ extension OpenClawChatViewModel {
     private func deliverLiveSend(_ attempt: LiveSendAttempt) async {
         let sessionKey = attempt.draft.session.key
         do {
-            await waitForPendingSessionSettings(in: sessionKey)
+            if let settingsError = await waitForCapabilitySettingsBarrier(in: sessionKey) {
+                await self.handleLiveSendFailure(
+                    NSError(
+                        domain: "OpenClawChatCapabilitySettings",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: settingsError]),
+                    attempt: attempt,
+                    canPreserveInOutbox: false)
+                return
+            }
             guard isCurrentSession(attempt.draft.session) else { return }
             logDiagnostic(
                 "chat.ui transport send start sessionKey=\(sessionKey) "
@@ -637,8 +646,10 @@ extension OpenClawChatViewModel {
             let thinkingLevel = effectiveThinkingLevelForSend(attempt.storedThinkingLevel)
             let response = try await transport.sendMessage(
                 sessionKey: sessionKey,
-                agentID: attempt.draft.session.deliveryAgentID,
-                expectedSessionRoutingContract: attempt.draft.session.sessionRoutingContract,
+                target: OpenClawChatSendTarget(
+                    agentID: attempt.draft.session.deliveryAgentID,
+                    expectedSessionRoutingContract: attempt.draft.session.sessionRoutingContract,
+                    expectedSessionSettings: self.composerSessionSettingsExpectation()),
                 message: attempt.draft.outgoingMessageText,
                 thinking: thinkingLevel,
                 idempotencyKey: attempt.runId,
@@ -726,9 +737,16 @@ extension OpenClawChatViewModel {
         return reusedRunAlreadyFinal
     }
 
-    private func handleLiveSendFailure(_ error: Error, attempt: LiveSendAttempt) async {
+    private func handleLiveSendFailure(
+        _ error: Error,
+        attempt: LiveSendAttempt,
+        canPreserveInOutbox: Bool = true) async
+    {
         guard isCurrentSession(attempt.draft.session) else { return }
-        if attempt.encodedAttachments.isEmpty, !(error is GatewayResponseError) {
+        if canPreserveInOutbox,
+           attempt.encodedAttachments.isEmpty,
+           !(error is GatewayResponseError)
+        {
             runMessageScopesByRunID.removeValue(forKey: attempt.runId)
             clearPendingRun(attempt.runId)
             let deliveryIsAmbiguous = !(error is OpenClawChatTransportSendError)
