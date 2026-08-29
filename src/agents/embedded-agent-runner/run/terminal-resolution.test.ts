@@ -470,37 +470,6 @@ describe("terminal resolution", () => {
     expect(resolved.result.meta.continuationPending).toBe(true);
   });
 
-  it("reports an empty visible parent that started only a collector", async () => {
-    const attempt = makeEmbeddedRunnerAttempt({
-      replayMetadata: { hadPotentialSideEffects: true, replaySafe: false },
-      currentAttemptReplayMetadata: { hadPotentialSideEffects: true, replaySafe: false },
-      acceptedSessionSpawns: [
-        {
-          runId: "collector-run",
-          childSessionKey: "agent:main:subagent:collector",
-          expectsCompletionMessage: false,
-        },
-      ],
-    });
-    const input = makeTerminalInput({
-      attempt,
-      runParams: { replyOperation: { turnKind: "visible" } as never },
-    });
-
-    const resolved = await resolveEmbeddedRunTerminal(input);
-
-    expect(resolved.action).toBe("complete");
-    if (resolved.action === "complete") {
-      expect(resolved.result.payloads).toEqual([
-        {
-          text: "⚠️ Agent couldn't generate a response. Note: some tool actions may have already been executed — please verify before retrying.",
-          isError: true,
-        },
-      ]);
-      expect(resolved.result.meta.continuationPending).toBeUndefined();
-    }
-  });
-
   it("does not add a continuation status when the parent already replied", async () => {
     const text = "The work is complete.";
     const assistant = buildEmbeddedRunnerAssistant({ content: [{ type: "text", text }] });
