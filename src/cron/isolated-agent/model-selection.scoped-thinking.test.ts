@@ -1,6 +1,7 @@
 // Cron turns must hydrate runtime-only model thinking through the provider-scoped helper,
 // never through a full live catalog build.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createPluginMetadataSnapshotFixture } from "../../plugins/plugin-metadata.test-support.js";
 import type { ResolvedPublishedModelCatalogOwner } from "./run-model-selection.runtime.js";
 
 const scopedThinkingCatalogMock = vi.fn(
@@ -22,7 +23,7 @@ const owner = {
   config: {},
   authModes: {},
   authStore: { version: 1, profiles: {} },
-  metadataSnapshot: { index: { plugins: [] }, plugins: [] },
+  metadataSnapshot: createPluginMetadataSnapshotFixture(),
   modelCatalog: { entries: [], routeVariants: [] },
 } satisfies ResolvedPublishedModelCatalogOwner;
 
