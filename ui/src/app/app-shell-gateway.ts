@@ -293,7 +293,7 @@ export class ShellGatewayOwner {
       const connectionBootstrap = context.connectionBootstrap;
       void connectionBootstrap.run("runtime-config", async () => {
         await this.ensureRuntimeConfig(snapshot, context.runtimeConfig);
-        await this.refreshProfileAppearancePrefs(context);
+        return this.refreshProfileAppearancePrefs(context);
       });
       if (this.host.routeState.routeId && !context.agents.state.agentsList) {
         void connectionBootstrap.run("agents", () =>

@@ -36,11 +36,11 @@ export function createConnectionBootstrapCoordinator(): ConnectionBootstrapCoord
         task.resolve();
         continue;
       }
-      if (client === null) {
+      if (!client) {
         queued.unshift(task);
         return;
       }
-      active += 1;
+      active++;
       const finish = () => {
         if (task.generation === generation) {
           tasks.delete(task.key);
@@ -51,7 +51,7 @@ export function createConnectionBootstrapCoordinator(): ConnectionBootstrapCoord
         .run()
         .then(finish, finish)
         .finally(() => {
-          active -= 1;
+          active--;
           drain();
         });
     }
@@ -71,16 +71,16 @@ export function createConnectionBootstrapCoordinator(): ConnectionBootstrapCoord
       if (nextClient === client) {
         // A connected snapshot can publish before this coordinator's listener
         // runs. A later disconnected snapshot invalidates that queued work.
-        if (nextClient === null && queued.length > 0) {
+        if (!nextClient && queued.length) {
           reset();
         }
         return;
       }
-      if (nextClient === null) {
+      if (!nextClient) {
         reset();
         return;
       }
-      if (client !== null) {
+      if (client) {
         reset();
       }
       client = nextClient;
