@@ -25,17 +25,6 @@ public struct GatewayNodeSessionRoute: Sendable, Equatable {
     fileprivate let socketGeneration: UInt64
 }
 
-/// One capability-scoped Canvas URL and the transport trust bound to its route.
-public struct GatewayCanvasHostRoute: Sendable, Equatable {
-    public let url: String
-    public let tlsFingerprintSHA256: String?
-
-    public init(url: String, tlsFingerprintSHA256: String?) {
-        self.url = url
-        self.tlsFingerprintSHA256 = tlsFingerprintSHA256
-    }
-}
-
 /// Owns a server-event stream until its caller is finished or canceled.
 public struct GatewayServerEventSubscription: Sendable {
     public let events: AsyncStream<EventFrame>
@@ -721,27 +710,28 @@ public actor GatewayNodeSession {
         _ capability: GatewayServerCapability,
         ifCurrentRoute expectedRoute: GatewayNodeSessionRoute) -> Bool?
     {
-        guard self.isCurrentRoute(expectedRoute),
-              self.channel != nil,
-              let serverCapabilities
-        else { return nil }
-        return serverCapabilities.contains(capability)
+        self.currentRouteValue(self.serverCapabilities, ifCurrentRoute: expectedRoute)?
+            .contains(capability)
     }
 
     public func supportsServerMethod(
         _ method: String,
         ifCurrentRoute expectedRoute: GatewayNodeSessionRoute) -> Bool?
     {
-        guard self.isCurrentRoute(expectedRoute),
-              self.channel != nil,
-              let serverMethods
-        else { return nil }
-        return serverMethods.contains(method)
+        self.currentRouteValue(self.serverMethods, ifCurrentRoute: expectedRoute)?
+            .contains(method)
     }
 
     public func currentOperatorScopes(ifCurrentRoute route: GatewayNodeSessionRoute) -> Set<String>? {
+        self.currentRouteValue(self.operatorScopes, ifCurrentRoute: route)
+    }
+
+    private func currentRouteValue<T>(
+        _ value: T?,
+        ifCurrentRoute route: GatewayNodeSessionRoute) -> T?
+    {
         guard self.isCurrentRoute(route), self.channel != nil else { return nil }
-        return self.operatorScopes
+        return value
     }
 
     public func waitForCurrentMainSessionKey(
