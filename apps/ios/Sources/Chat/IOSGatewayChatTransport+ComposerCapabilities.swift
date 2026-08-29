@@ -2,8 +2,21 @@ import Foundation
 import OpenClawChatUI
 import OpenClawKit
 import OpenClawProtocol
+import OSLog
 
 extension IOSGatewayChatTransport {
+    func sessionSettingsSupport(
+        ifCurrentRoute route: GatewayNodeSessionRoute) async -> (settingsContract: Bool, settingsCAS: Bool)
+    {
+        async let contract = self.gateway.supportsServerCapability(
+            .sessionSettingsContract,
+            ifCurrentRoute: route)
+        async let cas = self.gateway.supportsServerCapability(
+            .sessionSettingsCAS,
+            ifCurrentRoute: route)
+        return await (contract == true, cas == true)
+    }
+
     var supportsComposerCapabilities: Bool {
         true
     }
@@ -35,6 +48,9 @@ extension IOSGatewayChatTransport {
         async let settingsCapability = self.gateway.supportsServerCapability(
             .sessionSettingsContract,
             ifCurrentRoute: route)
+        async let settingsCASCapability = self.gateway.supportsServerCapability(
+            .sessionSettingsCAS,
+            ifCurrentRoute: route)
         let scopes = await operatorScopes ?? []
         let canAdmin = scopes.contains("operator.admin")
         let canWrite = canAdmin || scopes.contains("operator.write")
@@ -65,16 +81,19 @@ extension IOSGatewayChatTransport {
             toolsResponse,
             patchCapability,
             sendContextAvailable,
-            settingsAvailable) = await (
+            settingsAvailable,
+            settingsCASAvailable) = await (
             configRequest,
             skillsRequest,
             toolsRequest,
             patchMethodAdvertised,
             sendContextCapability,
-            settingsCapability)
+            settingsCapability,
+            settingsCASCapability)
         let patchAdvertised = patchCapability == true
         let structuredSendAvailable = sendContextAvailable == true
         let sessionSettingsAvailable = settingsAvailable == true && patchAdvertised
+        let sessionSettingsCASAvailable = settingsCASAvailable == true
 
         guard await self.gateway.currentRoute() == route else {
             return OpenClawChatComposerCapabilityCatalog()
@@ -122,9 +141,15 @@ extension IOSGatewayChatTransport {
             skillsAvailable: skillsSurface.loaded,
             connectorsAvailable: configSurface.loaded,
             toolAccessAvailable: toolsSurface.loaded,
-            permissionMutationAvailable: sessionSettingsAvailable && patchAdvertised && canWrite,
-            toolOverrideMutationAvailable: sessionSettingsAvailable && patchAdvertised && canAdmin,
-            canSelectFullPermission: sessionSettingsAvailable && patchAdvertised && canAdmin,
+            permissionMutationAvailable: sessionSettingsAvailable && sessionSettingsCASAvailable &&
+                patchAdvertised && canWrite,
+            sessionSettingsCASAvailable: sessionSettingsCASAvailable,
+            toolOverrideMutationAvailable: sessionSettingsAvailable && sessionSettingsCASAvailable &&
+                patchAdvertised && canAdmin,
+            toolOverrideMutationRequiresGatewayUpgrade: sessionSettingsAvailable &&
+                !sessionSettingsCASAvailable,
+            canSelectFullPermission: sessionSettingsAvailable && sessionSettingsCASAvailable &&
+                patchAdvertised && canAdmin,
             loadFailureMessage: failureMessage)
     }
 
@@ -220,6 +245,159 @@ extension IOSGatewayChatTransport {
             }
         }
         return notices
+    }
+
+    func sendMessage(
+        sessionKey: String,
+        message: String,
+        thinking: String,
+        idempotencyKey: String,
+        attachments: [OpenClawChatAttachmentPayload]) async throws -> OpenClawChatSendResponse
+    {
+        try await self.sendMessage(
+            sessionKey: sessionKey,
+            agentID: nil,
+            message: message,
+            thinking: thinking,
+            idempotencyKey: idempotencyKey,
+            attachments: attachments,
+            ifCurrentRoute: nil)
+    }
+
+    func sendMessage(
+        sessionKey: String,
+        agentID: String?,
+        expectedSessionRoutingContract: String?,
+        message: String,
+        thinking: String,
+        idempotencyKey: String,
+        attachments: [OpenClawChatAttachmentPayload]) async throws -> OpenClawChatSendResponse
+    {
+        try await self.sendMessage(
+            sessionKey: sessionKey,
+            context: OpenClawChatSendContext(
+                agentID: agentID,
+                expectedSessionRoutingContract: expectedSessionRoutingContract),
+            message: message,
+            thinking: thinking,
+            idempotencyKey: idempotencyKey,
+            attachments: attachments)
+    }
+
+    func sendMessage(
+        sessionKey: String,
+        context: OpenClawChatSendContext,
+        message: String,
+        thinking: String,
+        idempotencyKey: String,
+        attachments: [OpenClawChatAttachmentPayload]) async throws -> OpenClawChatSendResponse
+    {
+        let route: GatewayNodeSessionRoute? = if let outboxGatewayID {
+            await self.gateway.currentRoute(ifGatewayID: outboxGatewayID)
+        } else {
+            await self.gateway.currentRoute()
+        }
+        guard let route else { throw OpenClawChatTransportSendError.notDispatched }
+        async let routingContractCapability = self.gateway.supportsServerCapability(
+            .chatSendRoutingContract,
+            ifCurrentRoute: route)
+        async let sendContextCapability = self.gateway.supportsServerCapability(
+            .chatSendContextContract,
+            ifCurrentRoute: route)
+        async let settingsCASCapability = self.gateway.supportsServerCapability(
+            .sessionSettingsCAS,
+            ifCurrentRoute: route)
+        guard let supportsRoutingContract = await routingContractCapability,
+              let supportsSendContextContract = await sendContextCapability
+        else { throw OpenClawChatTransportSendError.notDispatched }
+        let supportsSettingsCAS = await settingsCASCapability == true
+        let guardedContract = OpenClawChatSessionRoutingContract.expectedValue(
+            context.expectedSessionRoutingContract,
+            serverSupportsGuard: supportsRoutingContract)
+        if context.requiresStructuredDelivery, !supportsSendContextContract {
+            throw OpenClawChatTransportSendError.notDispatched
+        }
+        if context.expectedSessionSettings != nil, !supportsSettingsCAS {
+            throw OpenClawChatTransportSendError.notDispatched
+        }
+        return try await self.sendMessage(
+            sessionKey: sessionKey,
+            agentID: context.agentID,
+            expectedSessionRoutingContract: guardedContract,
+            expectedSessionSettings: context.expectedSessionSettings,
+            message: supportsSendContextContract
+                ? message
+                : (context.unstructuredMessageFallback ?? message),
+            thinking: thinking,
+            idempotencyKey: idempotencyKey,
+            attachments: attachments,
+            sessionID: context.sessionID,
+            queueMode: context.queueMode,
+            replyToID: context.replyToID,
+            expectedLeaf: context.expectedLeaf,
+            supportsSendContextContract: supportsSendContextContract,
+            supportsSessionSettingsCAS: supportsSettingsCAS,
+            ifCurrentRoute: route,
+            distinguishPreDispatchRouteChange: true)
+    }
+
+    func sendMessage(
+        sessionKey: String,
+        agentID: String? = nil,
+        expectedSessionRoutingContract: String? = nil,
+        expectedSessionSettings: OpenClawChatSessionSettingsExpectation? = nil,
+        message: String,
+        thinking: String?,
+        idempotencyKey: String,
+        attachments: [OpenClawChatAttachmentPayload],
+        sessionID: String? = nil,
+        queueMode: OpenClawChatQueueMode? = nil,
+        replyToID: String? = nil,
+        expectedLeaf: OpenClawChatLeafExpectation = .unavailable,
+        supportsSendContextContract: Bool = false,
+        supportsSessionSettingsCAS: Bool = false,
+        ifCurrentRoute expectedRoute: GatewayNodeSessionRoute?,
+        distinguishPreDispatchRouteChange: Bool = false) async throws -> OpenClawChatSendResponse
+    {
+        let target = self.sessionTarget(for: sessionKey, overrideAgentID: agentID)
+        let startLogMessage =
+            "chat.send start sessionKey=\(target.sessionKey) "
+                + "len=\(message.count) attachments=\(attachments.count)"
+        Self.logger.info("\(startLogMessage, privacy: .public)")
+        GatewayDiagnostics.log(startLogMessage)
+        let request = OpenClawChatGatewayRequests.sendMessage(
+            sessionKey: target.sessionKey,
+            agentID: target.agentID,
+            expectedSessionRoutingContract: expectedSessionRoutingContract,
+            expectedSessionSettings: expectedSessionSettings,
+            supportsSessionSettingsCAS: supportsSessionSettingsCAS,
+            message: message,
+            thinking: thinking,
+            idempotencyKey: idempotencyKey,
+            attachments: attachments,
+            sessionID: sessionID,
+            queueMode: queueMode,
+            replyToID: replyToID,
+            expectedLeaf: expectedLeaf,
+            supportsSendContextContract: supportsSendContextContract)
+        do {
+            let res = try await gateway.request(
+                request,
+                ifCurrentRoute: expectedRoute,
+                distinguishPreDispatchRouteChange: distinguishPreDispatchRouteChange)
+            let decoded = try JSONDecoder().decode(OpenClawChatSendResponse.self, from: res)
+            Self.logger.info("chat.send ok runId=\(decoded.runId, privacy: .public)")
+            GatewayDiagnostics.log("chat.send ok runId=\(decoded.runId) status=\(decoded.status)")
+            return decoded
+        } catch is GatewayNodeSessionRequestError {
+            Self.logger.info("chat.send skipped because the captured route changed before dispatch")
+            GatewayDiagnostics.log("chat.send skipped before dispatch: route changed")
+            throw OpenClawChatTransportSendError.notDispatched
+        } catch {
+            Self.logger.error("chat.send failed \(error.localizedDescription, privacy: .public)")
+            GatewayDiagnostics.log("chat.send failed error=\(error.localizedDescription)")
+            throw error
+        }
     }
 }
 

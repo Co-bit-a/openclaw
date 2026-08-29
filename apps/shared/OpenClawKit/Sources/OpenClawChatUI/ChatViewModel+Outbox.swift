@@ -422,11 +422,15 @@ extension OpenClawChatViewModel {
         }
         // Capture the effective value only after model selection settles. Raw
         // preferences can outlive this process, when model metadata is absent.
-        await self.waitForPendingSessionSettings(
+        if let settingsError = await self.waitForCapabilitySettingsBarrier(
             in: session.key,
             canonicalSessionKey: deliverySessionKey,
             agentID: agentID,
             sessionRoutingContract: routingContract)
+        {
+            self.errorText = settingsError
+            return false
+        }
         guard self.isCurrentSession(session) else { return false }
         let expectedSessionSettings = self.durableSessionSettingsExpectation()
         let thinking = self.effectiveThinkingLevelForSend(
@@ -442,7 +446,8 @@ extension OpenClawChatViewModel {
             routingContract: routingContract,
             agentID: agentID,
             structuredMessageText: structuredMessageText,
-            sendContext: sendContext,
+            sendContext: sendContext?.withExpectedSessionSettings(
+                expectedSessionSettings),
             text: text,
             attachments: draftAttachments.map {
                 OpenClawChatOutboxAttachment(
@@ -453,7 +458,6 @@ extension OpenClawChatViewModel {
                     durationSeconds: $0.durationSeconds)
             },
             thinking: thinking,
-            expectedSessionSettings: expectedSessionSettings,
             createdAt: Date().timeIntervalSince1970,
             status: .queued,
             retryCount: 0,
@@ -507,6 +511,7 @@ extension OpenClawChatViewModel {
         let durableContext = OpenClawChatSendContext(
             agentID: agentID,
             expectedSessionRoutingContract: routingContract,
+            expectedSessionSettings: sendContext.expectedSessionSettings,
             sessionID: sendContext.sessionID,
             queueMode: sendContext.queueMode,
             replyToID: sendContext.replyToID,
@@ -631,9 +636,13 @@ extension OpenClawChatViewModel {
             deliverySessionKey: deliverySessionKey,
             routingContract: routingContract,
             agentID: agentID,
+            sendContext: OpenClawChatSendContext(
+                agentID: agentID,
+                expectedSessionRoutingContract: routingContract,
+                expectedSessionSettings: expectedSessionSettings,
+                unstructuredMessageFallback: text),
             text: text,
             thinking: thinking,
-            expectedSessionSettings: expectedSessionSettings,
             createdAt: Date().timeIntervalSince1970,
             status: deliveryIsAmbiguous ? .failed : .queued,
             retryCount: 0,
@@ -989,15 +998,6 @@ extension OpenClawChatViewModel {
                 guard await self.parkOutboxCommandForChangedTarget(next, outbox: outbox) else { break }
                 continue
             }
-            // Same ordering contract as the live send path: a run must not
-            // start with stale model or thinking state while a settings patch
-            // for its session is still in flight.
-            await self.waitForPendingSessionSettings(
-                in: next.sessionKey,
-                canonicalSessionKey: next.deliverySessionKey,
-                agentID: next.agentID,
-                sessionRoutingContract: next.routingContract)
-            self.setOutboxState(.sending, forCommandID: next.id)
             switch await self.deliverOutboxCommand(next, outbox: outbox, routeLease: routeLease) {
             case .continueFlush:
                 continue
@@ -1023,17 +1023,20 @@ extension OpenClawChatViewModel {
         outbox: any OpenClawChatCommandOutbox,
         routeLease: OpenClawChatTransportRouteLease) async -> OutboxFlushDisposition
     {
-        if command.sendContext?.requiresStructuredDelivery == true,
-           !routeLease.supportsStructuredSendContext
+        if let settingsError = await self.waitForCapabilitySettingsBarrier(
+            in: command.sessionKey,
+            canonicalSessionKey: command.deliverySessionKey,
+            agentID: command.agentID,
+            sessionRoutingContract: command.routingContract)
         {
-            return await self.rejectUnsupportedStructuredCommand(command, outbox: outbox)
-        }
-        if let disposition = await self.validateOutboxSessionBeforeDelivery(
-            command,
-            outbox: outbox,
-            routeLease: routeLease)
-        {
-            return disposition
+            _ = await outbox.markCommandFailedIfPresent(
+                id: command.id,
+                attemptVersion: command.attemptVersion,
+                retryCount: command.retryCount,
+                lastError: settingsError)
+            self.setOutboxState(.failed(reason: settingsError), forCommandID: command.id)
+            self.errorText = settingsError
+            return .stop
         }
         if self.transport.outboxRequiresSessionRoutingContract,
            !routeLease.supportsSessionSettingsCAS
@@ -1050,7 +1053,7 @@ extension OpenClawChatViewModel {
             return .continueFlush
         }
         if routeLease.supportsSessionSettingsCAS,
-           command.expectedSessionSettings == nil
+           command.sendContext?.expectedSessionSettings == nil
         {
             let reason = OpenClawChatSQLiteTranscriptCache.outboxSettingsReviewRequiredError
             let message = OpenClawChatSQLiteTranscriptCache.outboxDisplayError(reason)
@@ -1064,6 +1067,18 @@ extension OpenClawChatViewModel {
             return .continueFlush
         }
         self.setOutboxState(.sending, forCommandID: command.id)
+        if command.sendContext?.requiresStructuredDelivery == true,
+           !routeLease.supportsStructuredSendContext
+        {
+            return await self.rejectUnsupportedStructuredCommand(command, outbox: outbox)
+        }
+        if let disposition = await self.validateOutboxSessionBeforeDelivery(
+            command,
+            outbox: outbox,
+            routeLease: routeLease)
+        {
+            return disposition
+        }
         do {
             let thinking = self.effectiveThinkingLevelForSend(
                 command.thinking,
@@ -1129,6 +1144,13 @@ extension OpenClawChatViewModel {
             }
             if error.detailsReason == OpenClawChatSessionRoutingContract.changedErrorReason {
                 let parked = await self.parkOutboxCommandForChangedTarget(command, outbox: outbox)
+                return parked ? .continueFlush : .stop
+            }
+            if error.detailsReason == OpenClawChatSessionSettingsContract.changedErrorReason {
+                let parked = await self.parkOutboxCommandForChangedTarget(
+                    command,
+                    outbox: outbox,
+                    lastError: "Session settings changed; review and retry this message.")
                 return parked ? .continueFlush : .stop
             }
             // A response error proves the gateway rejected the request; unlike

@@ -64,12 +64,14 @@ extension OpenClawChatSQLiteTranscriptCache {
         let replyToID: String? = row["send_reply_to_id"]
         let unstructuredMessageFallback: String? = row["send_unstructured_message_fallback"]
         let requiresStructuredDelivery: Int? = row["send_requires_structured_delivery"]
+        let expectedSettingsJSON: String? = row["expected_settings_json"]
+        let expectedSessionSettings = try Self.decodeSessionSettingsExpectation(expectedSettingsJSON)
         guard requiresStructuredDelivery == nil || requiresStructuredDelivery == 0 ||
             requiresStructuredDelivery == 1
         else { throw DatabaseError(message: "unknown structured delivery flag") }
         let hasSendContext = structuredMessageText != nil || sessionID != nil || queueMode != nil ||
             replyToID != nil || expectedLeaf != .unavailable || unstructuredMessageFallback != nil ||
-            requiresStructuredDelivery != nil
+            requiresStructuredDelivery != nil || expectedSessionSettings != nil
         let routingContract: String = row["routing_contract"]
         let agentIDRaw: String = row["agent_id"]
         let agentID = Self.optionalAgentID(agentIDRaw)
@@ -87,6 +89,7 @@ extension OpenClawChatSQLiteTranscriptCache {
                 ? OpenClawChatSendContext(
                     agentID: agentID,
                     expectedSessionRoutingContract: routingContract,
+                    expectedSessionSettings: expectedSessionSettings,
                     sessionID: sessionID,
                     queueMode: queueMode,
                     replyToID: replyToID,
@@ -102,6 +105,14 @@ extension OpenClawChatSQLiteTranscriptCache {
             attemptVersion: row["attempt_version"],
             retryCount: row["retry_count"],
             lastError: lastError.isEmpty ? nil : lastError)
+    }
+
+    nonisolated static func storedSendContext(
+        _ context: OpenClawChatSendContext?) -> (
+        expectedLeaf: (state: String, entryID: String?)?,
+        expectedSettingsJSON: String?)
+    {
+        (context?.expectedLeaf.storedValue, self.encodeSessionSettingsExpectation(context?.expectedSessionSettings))
     }
 
     nonisolated static func normalizedAgentID(_ agentID: String?) -> String {

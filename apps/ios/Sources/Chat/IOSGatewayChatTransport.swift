@@ -13,7 +13,7 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
     let gateway: GatewayNodeSession
     private let widgetGateway: GatewayNodeSession?
     let globalAgentId: String?
-    private let outboxGatewayID: String?
+    let outboxGatewayID: String?
     private let sessionMutationRequest: (@Sendable (OpenClawChatGatewayRequest) async throws -> Data)?
     private let mediaArtifactLoader: IOSMediaArtifactLoader?
 
@@ -49,17 +49,18 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
         async let sendContextCapability = self.gateway.supportsServerCapability(
             .chatSendContextContract,
             ifCurrentRoute: route)
+        async let settingsCASCapability = self.gateway.supportsServerCapability(
+            .sessionSettingsCAS,
+            ifCurrentRoute: route)
         guard let supportsRoutingContract = await routingContractCapability,
               let supportsSendContextContract = await sendContextCapability
         else { return .unavailable(reason: nil) }
+        let supportsSettingsCAS = await settingsCASCapability == true
         guard supportsRoutingContract else {
             return .unavailable(
                 reason: OpenClawChatTransportUpgradeMessage.routingContract,
                 allowsLiveSend: true)
         }
-        let supportsSettingsCAS = await gateway.supportsServerCapability(
-            .sessionSettingsCAS,
-            ifCurrentRoute: route) == true
         let transport = self
         guard let routingContract = try? await transport.sessionRoutingContract(ifCurrentRoute: route)
         else { return .unavailable(reason: nil) }
@@ -72,6 +73,7 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
                     sessionKey: sessionKey,
                     agentID: context.agentID,
                     expectedSessionRoutingContract: routingContract,
+                    expectedSessionSettings: context.expectedSessionSettings,
                     message: supportsSendContextContract
                         ? message
                         : (context.unstructuredMessageFallback ?? message),
@@ -83,6 +85,7 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
                     replyToID: context.replyToID,
                     expectedLeaf: context.expectedLeaf,
                     supportsSendContextContract: supportsSendContextContract,
+                    supportsSessionSettingsCAS: supportsSettingsCAS,
                     ifCurrentRoute: route,
                     distinguishPreDispatchRouteChange: true)
             },
@@ -404,6 +407,8 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
     {
         let requiresSettingsContract = patch.expectedSessionID != nil ||
             patch.permissionMode != nil || patch.toolOverrides != nil
+        let requiresSettingsCAS = patch.expectedPermissionMode != nil ||
+            patch.expectedToolOverrides != nil || patch.permissionMode != nil || patch.toolOverrides != nil
         let fallbackRoute: GatewayNodeSessionRoute? = if requiresSettingsContract, expectedRoute == nil {
             await self.currentSessionMutationRoute()
         } else {
@@ -418,18 +423,24 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
         guard !requiresSettingsContract || settingsSupport.settingsContract else {
             throw OpenClawChatTransportSendError.notDispatched
         }
+        guard !requiresSettingsCAS || settingsSupport.settingsCAS else {
+            throw OpenClawChatTransportSendError.notDispatched
+        }
         let target = self.sessionTarget(for: sessionKey, overrideAgentID: agentID)
         let request = OpenClawChatGatewayRequests.patchSessionSettings(
             sessionKey: target.sessionKey,
             agentID: target.agentID,
             expectedSessionID: patch.expectedSessionID,
+            expectedPermissionMode: patch.expectedPermissionMode,
+            expectedToolOverrides: patch.expectedToolOverrides,
             model: patch.model,
             thinkingLevel: patch.thinkingLevel,
             fastMode: patch.fastMode,
             verboseLevel: patch.verboseLevel,
             permissionMode: patch.permissionMode,
             toolOverrides: patch.toolOverrides,
-            supportsSessionSettingsContract: settingsSupport.settingsContract)
+            supportsSessionSettingsContract: settingsSupport.settingsContract,
+            supportsSessionSettingsCAS: settingsSupport.settingsCAS)
         let response = if let settingsRoute {
             try await self.gateway.request(
                 request,
@@ -689,151 +700,6 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
         let res = try await gateway.request(request)
         let decoded = try JSONDecoder().decode(CommandsListResult.self, from: res)
         return decoded.commands.map(OpenClawChatGatewayPayloadCodec.commandChoice)
-    }
-
-    func sendMessage(
-        sessionKey: String,
-        message: String,
-        thinking: String,
-        idempotencyKey: String,
-        attachments: [OpenClawChatAttachmentPayload]) async throws -> OpenClawChatSendResponse
-    {
-        try await self.sendMessage(
-            sessionKey: sessionKey,
-            agentID: nil,
-            message: message,
-            thinking: thinking,
-            idempotencyKey: idempotencyKey,
-            attachments: attachments,
-            ifCurrentRoute: nil)
-    }
-
-    func sendMessage(
-        sessionKey: String,
-        agentID: String?,
-        expectedSessionRoutingContract: String?,
-        message: String,
-        thinking: String,
-        idempotencyKey: String,
-        attachments: [OpenClawChatAttachmentPayload]) async throws -> OpenClawChatSendResponse
-    {
-        try await self.sendMessage(
-            sessionKey: sessionKey,
-            context: OpenClawChatSendContext(
-                agentID: agentID,
-                expectedSessionRoutingContract: expectedSessionRoutingContract),
-            message: message,
-            thinking: thinking,
-            idempotencyKey: idempotencyKey,
-            attachments: attachments)
-    }
-
-    func sendMessage(
-        sessionKey: String,
-        context: OpenClawChatSendContext,
-        message: String,
-        thinking: String,
-        idempotencyKey: String,
-        attachments: [OpenClawChatAttachmentPayload]) async throws -> OpenClawChatSendResponse
-    {
-        let route: GatewayNodeSessionRoute? = if let outboxGatewayID {
-            await self.gateway.currentRoute(ifGatewayID: outboxGatewayID)
-        } else {
-            await self.gateway.currentRoute()
-        }
-        guard let route else { throw OpenClawChatTransportSendError.notDispatched }
-        async let routingContractCapability = self.gateway.supportsServerCapability(
-            .chatSendRoutingContract,
-            ifCurrentRoute: route)
-        async let sendContextCapability = self.gateway.supportsServerCapability(
-            .chatSendContextContract,
-            ifCurrentRoute: route)
-        guard let supportsRoutingContract = await routingContractCapability,
-              let supportsSendContextContract = await sendContextCapability
-        else { throw OpenClawChatTransportSendError.notDispatched }
-        // Durable replay requires the atomic server guard and is blocked in
-        // acquireOutboxRouteLease. Keep ordinary live chat compatible with
-        // older gateways by retaining the captured route but omitting the
-        // unsupported request field.
-        let guardedContract = OpenClawChatSessionRoutingContract.expectedValue(
-            context.expectedSessionRoutingContract,
-            serverSupportsGuard: supportsRoutingContract)
-        if context.requiresStructuredDelivery, !supportsSendContextContract {
-            throw OpenClawChatTransportSendError.notDispatched
-        }
-        return try await self.sendMessage(
-            sessionKey: sessionKey,
-            agentID: context.agentID,
-            expectedSessionRoutingContract: guardedContract,
-            message: supportsSendContextContract
-                ? message
-                : (context.unstructuredMessageFallback ?? message),
-            thinking: thinking,
-            idempotencyKey: idempotencyKey,
-            attachments: attachments,
-            sessionID: context.sessionID,
-            queueMode: context.queueMode,
-            replyToID: context.replyToID,
-            expectedLeaf: context.expectedLeaf,
-            supportsSendContextContract: supportsSendContextContract,
-            ifCurrentRoute: route,
-            distinguishPreDispatchRouteChange: true)
-    }
-
-    func sendMessage(
-        sessionKey: String,
-        agentID: String? = nil,
-        expectedSessionRoutingContract: String? = nil,
-        message: String,
-        thinking: String?,
-        idempotencyKey: String,
-        attachments: [OpenClawChatAttachmentPayload],
-        sessionID: String? = nil,
-        queueMode: OpenClawChatQueueMode? = nil,
-        replyToID: String? = nil,
-        expectedLeaf: OpenClawChatLeafExpectation = .unavailable,
-        supportsSendContextContract: Bool = false,
-        ifCurrentRoute expectedRoute: GatewayNodeSessionRoute?,
-        distinguishPreDispatchRouteChange: Bool = false) async throws -> OpenClawChatSendResponse
-    {
-        let target = self.sessionTarget(for: sessionKey, overrideAgentID: agentID)
-        let startLogMessage =
-            "chat.send start sessionKey=\(target.sessionKey) "
-                + "len=\(message.count) attachments=\(attachments.count)"
-        Self.logger.info(
-            "\(startLogMessage, privacy: .public)")
-        GatewayDiagnostics.log(startLogMessage)
-        let request = OpenClawChatGatewayRequests.sendMessage(
-            sessionKey: target.sessionKey,
-            agentID: target.agentID,
-            expectedSessionRoutingContract: expectedSessionRoutingContract,
-            message: message,
-            thinking: thinking,
-            idempotencyKey: idempotencyKey,
-            attachments: attachments,
-            sessionID: sessionID,
-            queueMode: queueMode,
-            replyToID: replyToID,
-            expectedLeaf: expectedLeaf,
-            supportsSendContextContract: supportsSendContextContract)
-        do {
-            let res = try await gateway.request(
-                request,
-                ifCurrentRoute: expectedRoute,
-                distinguishPreDispatchRouteChange: distinguishPreDispatchRouteChange)
-            let decoded = try JSONDecoder().decode(OpenClawChatSendResponse.self, from: res)
-            Self.logger.info("chat.send ok runId=\(decoded.runId, privacy: .public)")
-            GatewayDiagnostics.log("chat.send ok runId=\(decoded.runId) status=\(decoded.status)")
-            return decoded
-        } catch is GatewayNodeSessionRequestError {
-            Self.logger.info("chat.send skipped because the captured route changed before dispatch")
-            GatewayDiagnostics.log("chat.send skipped before dispatch: route changed")
-            throw OpenClawChatTransportSendError.notDispatched
-        } catch {
-            Self.logger.error("chat.send failed \(error.localizedDescription, privacy: .public)")
-            GatewayDiagnostics.log("chat.send failed error=\(error.localizedDescription)")
-            throw error
-        }
     }
 
     func waitForRunCompletion(

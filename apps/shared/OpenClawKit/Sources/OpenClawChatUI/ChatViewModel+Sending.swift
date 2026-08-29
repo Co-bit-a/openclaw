@@ -422,14 +422,18 @@ extension OpenClawChatViewModel {
         let storedThinkingLevel = preferredThinkingLevel
         var reservedOutboxCommand: OpenClawChatOutboxCommand?
         if draft.isActiveFollowUp, self.transport.outboxRequiresSessionRoutingContract {
-            await waitForPendingSessionSettings(in: draft.session.key)
+            if let settingsError = await waitForCapabilitySettingsBarrier(in: draft.session.key) {
+                self.errorText = settingsError
+                return
+            }
             guard isCurrentSession(draft.session) else { return }
             let thinking = effectiveThinkingLevelForSend(storedThinkingLevel)
             guard let command = await self.reserveActiveFollowUpCommand(
                 id: runID,
                 text: draft.durableMessageText,
                 structuredMessageText: draft.liveMessageText,
-                sendContext: draft.sendContext,
+                sendContext: draft.sendContext.withExpectedSessionSettings(
+                    self.composerSessionSettingsExpectation()),
                 thinking: thinking,
                 session: draft.session)
             else {
@@ -496,6 +500,7 @@ extension OpenClawChatViewModel {
             sendContext: OpenClawChatSendContext(
                 agentID: session.deliveryAgentID,
                 expectedSessionRoutingContract: session.sessionRoutingContract,
+                expectedSessionSettings: self.composerSessionSettingsExpectation(),
                 sessionID: currentSessionID,
                 queueMode: isActiveFollowUp ? self.effectiveQueueMode : nil,
                 replyToID: replyTarget?.transcriptMessageID,
@@ -746,7 +751,16 @@ extension OpenClawChatViewModel {
         let sessionKey = attempt.draft.session.key
         var durableSessionSettingsExpectation: OpenClawChatSessionSettingsExpectation?
         do {
-            await waitForPendingSessionSettings(in: sessionKey)
+            if let settingsError = await waitForCapabilitySettingsBarrier(in: sessionKey) {
+                await self.handleLiveSendFailure(
+                    NSError(
+                        domain: "OpenClawChatCapabilitySettings",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: settingsError]),
+                    attempt: attempt,
+                    canPreserveInOutbox: false)
+                return
+            }
             guard isCurrentSession(attempt.draft.session) else {
                 if let reserved = attempt.reservedOutboxCommand {
                     _ = await self.discardReservedActiveFollowUp(reserved)
@@ -761,7 +775,8 @@ extension OpenClawChatViewModel {
             let thinkingLevel = effectiveThinkingLevelForSend(attempt.storedThinkingLevel)
             let response = try await transport.sendMessage(
                 sessionKey: sessionKey,
-                context: attempt.draft.sendContext,
+                context: attempt.draft.sendContext.withExpectedSessionSettings(
+                    sendSessionSettingsExpectation),
                 message: attempt.draft.liveMessageText,
                 thinking: thinkingLevel,
                 idempotencyKey: attempt.runId,
@@ -873,7 +888,7 @@ extension OpenClawChatViewModel {
         canPreserveInOutbox: Bool = true) async
     {
         if let reserved = attempt.reservedOutboxCommand {
-            if error is GatewayResponseError || error is OpenClawChatTransportSendError {
+            if !canPreserveInOutbox || error is GatewayResponseError || error is OpenClawChatTransportSendError {
                 _ = await self.discardReservedActiveFollowUp(reserved)
             } else {
                 _ = await self.parkReservedActiveFollowUpAsUnconfirmed(reserved)

@@ -1402,3 +1402,7 @@ public enum OpenClawChatSessionRoutingContract {
         return normalized?.isEmpty == false ? normalized : nil
     }
 }
+
+public enum OpenClawChatSessionSettingsContract {
+    public static let changedErrorReason = "session-settings-changed"
+}

@@ -87,41 +87,6 @@ public actor OpenClawChatSQLiteTranscriptCache: OpenClawChatTranscriptCache,
     public static let maxCachedSessions = 50
     public static let maxCachedSessionOwners = 50
     public static let maxCachedTranscripts = 50
-    public static let maxCachedMessagesPerSession = 200
-    public static let maxQueuedCommands = 50
-    public static let maxAttachmentBytesPerCommand = 40_000_000
-    public static let maxQueuedAttachmentBytes = 50_000_000
-    public static let outboxCommandMaxAge: TimeInterval = 48 * 60 * 60
-    public static let outboxExpiredError = "expired"
-    public static let outboxUnconfirmedError = "delivery_unconfirmed"
-    public static let outboxUnknownTargetError = "delivery_target_unknown"
-    public static let outboxChangedTargetError = "delivery_target_changed"
-    public static let outboxChangedSessionError = "delivery_session_changed"
-    public static let outboxClientUpgradeRequiredError = "client_upgrade_required"
-    public static let outboxSettingsUpgradeRequiredError = "settings_client_upgrade_required"
-    public static let outboxSettingsGatewayUpgradeRequiredError = "settings_gateway_upgrade_required"
-    public static let outboxSettingsReviewRequiredError = "settings_review_required"
-    public static let outboxSettingsChangedError = "settings_changed"
-
-    static func outboxDisplayError(_ lastError: String?) -> String? {
-        guard let lastError else { return nil }
-        switch lastError {
-        case self.outboxClientUpgradeRequiredError, self.outboxSettingsUpgradeRequiredError:
-            return String(localized: "A previous app version could not safely send this message. Review and retry it.")
-        case self.outboxSettingsGatewayUpgradeRequiredError:
-            return String(localized: "Update the gateway before sending queued messages with session settings.")
-        case self.outboxSettingsReviewRequiredError:
-            return String(localized: "Session settings were not captured. Review and retry this message.")
-        case self.outboxSettingsChangedError:
-            return String(localized: "Session settings changed. Review and retry this message.")
-        default:
-            break
-        }
-        guard
-            let marker = lastError.range(of: "\n# branch-park:")
-        else { return lastError }
-        return String(lastError[..<marker.lowerBound])
-    }
     private let databases: OpenClawClientDatabases
     public nonisolated let gatewayID: String
     private var isRetired = false
@@ -564,7 +529,7 @@ extension OpenClawChatSQLiteTranscriptCache {
                     agentID: command.agentID)
                 try Self.ensureBranchScope(db, gatewayID: gatewayID, scope: scope)
                 let branchState = try Self.readBranchState(db, gatewayID: gatewayID, scope: scope)
-                let expectedLeaf = command.sendContext?.expectedLeaf.storedValue
+                let storedContext = Self.storedSendContext(command.sendContext)
                 try db.execute(
                     sql: """
                     INSERT INTO outbox_commands(
@@ -573,7 +538,7 @@ extension OpenClawChatSQLiteTranscriptCache {
                         send_session_id, send_queue_mode, send_reply_to_id,
                         send_expected_leaf_state, send_expected_leaf_entry_id,
                         send_unstructured_message_fallback, send_requires_structured_delivery,
-                        text, thinking, expected_settings_json, created_at,
+                        expected_settings_json, text, thinking, created_at,
                         status, attempt_version, branch_epoch, retry_count, last_error, attachment_bytes
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
@@ -588,13 +553,13 @@ extension OpenClawChatSQLiteTranscriptCache {
                         command.sendContext?.sessionID,
                         command.sendContext?.queueMode?.rawValue,
                         command.sendContext?.replyToID,
-                        expectedLeaf?.state,
-                        expectedLeaf?.entryID,
+                        storedContext.expectedLeaf?.state,
+                        storedContext.expectedLeaf?.entryID,
                         command.sendContext?.unstructuredMessageFallback,
                         command.sendContext.map { $0.requiresStructuredDelivery ? 1 : 0 },
+                        storedContext.expectedSettingsJSON,
                         command.text,
                         command.thinking,
-                        Self.encodeSessionSettingsExpectation(command.expectedSessionSettings),
                         command.createdAt,
                         command.status.rawValue,
                         command.attemptVersion,

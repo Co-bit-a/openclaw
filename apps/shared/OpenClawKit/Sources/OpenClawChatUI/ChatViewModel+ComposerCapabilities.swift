@@ -105,6 +105,31 @@ extension OpenClawChatViewModel {
             toolOverrides: entry?.toolOverrides)
     }
 
+    func sessionSettingsPatchTarget(
+        in sessionKey: String,
+        canonicalSessionKey: String?,
+        agentID: String?,
+        sessionRoutingContract: String?) -> ModelPatchTarget
+    {
+        if canonicalSessionKey == nil,
+           agentID == nil,
+           sessionRoutingContract == nil,
+           sessionKey == self.sessionKey
+        {
+            let session = self.currentSessionSnapshot()
+            return modelPatchTarget(
+                sessionKey: session.key,
+                canonicalSessionKey: currentSessionEntry()?.key,
+                agentID: session.deliveryAgentID,
+                sessionRoutingContract: session.sessionRoutingContract)
+        }
+        return self.modelPatchTarget(
+            sessionKey: sessionKey,
+            canonicalSessionKey: canonicalSessionKey,
+            agentID: agentID,
+            sessionRoutingContract: sessionRoutingContract)
+    }
+
     func waitForCapabilitySettingsBarrier(
         in sessionKey: String,
         canonicalSessionKey: String? = nil,

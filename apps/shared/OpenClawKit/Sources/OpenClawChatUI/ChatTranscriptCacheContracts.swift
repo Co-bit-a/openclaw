@@ -12,10 +12,27 @@ extension OpenClawChatSQLiteTranscriptCache {
     public static let outboxChangedTargetError = "delivery_target_changed"
     public static let outboxChangedSessionError = "delivery_session_changed"
     public static let outboxClientUpgradeRequiredError = "client_upgrade_required"
+    public static let outboxSettingsUpgradeRequiredError = "settings_client_upgrade_required"
+    public static let outboxSettingsGatewayUpgradeRequiredError = "settings_gateway_upgrade_required"
+    public static let outboxSettingsReviewRequiredError = "settings_review_required"
+    public static let outboxSettingsChangedError = "settings_changed"
 
     static func outboxDisplayError(_ lastError: String?) -> String? {
-        guard let lastError,
-              let marker = lastError.range(of: "\n# branch-park:")
+        guard let lastError else { return nil }
+        switch lastError {
+        case self.outboxClientUpgradeRequiredError, self.outboxSettingsUpgradeRequiredError:
+            return String(localized: "A previous app version could not safely send this message. Review and retry it.")
+        case self.outboxSettingsGatewayUpgradeRequiredError:
+            return String(localized: "Update the gateway before sending queued messages with session settings.")
+        case self.outboxSettingsReviewRequiredError:
+            return String(localized: "Session settings were not captured. Review and retry this message.")
+        case self.outboxSettingsChangedError:
+            return String(localized: "Session settings changed. Review and retry this message.")
+        default:
+            break
+        }
+        guard
+            let marker = lastError.range(of: "\n# branch-park:")
         else { return lastError }
         return String(lastError[..<marker.lowerBound])
     }
@@ -194,9 +211,6 @@ public struct OpenClawChatOutboxCommand: Hashable, Sendable, Identifiable {
     /// Thinking level captured when the command was queued, so a later flush
     /// never borrows the setting of whichever session is visible then.
     public let thinking: String
-    /// Permission and tool state captured with this command. Durable replay
-    /// must use this command-owned fence, never the currently visible session.
-    public let expectedSessionSettings: OpenClawChatSessionSettingsExpectation?
     /// Seconds since 1970; flush order is strictly ascending `createdAt`.
     public let createdAt: Double
     public var status: Status
@@ -219,7 +233,6 @@ public struct OpenClawChatOutboxCommand: Hashable, Sendable, Identifiable {
         text: String,
         attachments: [OpenClawChatOutboxAttachment] = [],
         thinking: String,
-        expectedSessionSettings: OpenClawChatSessionSettingsExpectation? = nil,
         createdAt: Double,
         status: Status,
         attemptVersion: Int = 1,
@@ -244,7 +257,6 @@ public struct OpenClawChatOutboxCommand: Hashable, Sendable, Identifiable {
         self.text = text
         self.attachments = attachments
         self.thinking = thinking
-        self.expectedSessionSettings = expectedSessionSettings
         self.createdAt = createdAt
         self.status = status
         self.attemptVersion = attemptVersion

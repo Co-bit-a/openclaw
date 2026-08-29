@@ -27,6 +27,7 @@ public enum OpenClawChatLeafExpectation: Hashable, Sendable {
 public struct OpenClawChatSendContext: Hashable, Sendable {
     public let agentID: String?
     public let expectedSessionRoutingContract: String?
+    public let expectedSessionSettings: OpenClawChatSessionSettingsExpectation?
     public let sessionID: String?
     public let queueMode: OpenClawChatQueueMode?
     public let replyToID: String?
@@ -37,6 +38,7 @@ public struct OpenClawChatSendContext: Hashable, Sendable {
     public init(
         agentID: String? = nil,
         expectedSessionRoutingContract: String? = nil,
+        expectedSessionSettings: OpenClawChatSessionSettingsExpectation? = nil,
         sessionID: String? = nil,
         queueMode: OpenClawChatQueueMode? = nil,
         replyToID: String? = nil,
@@ -46,11 +48,25 @@ public struct OpenClawChatSendContext: Hashable, Sendable {
     {
         self.agentID = agentID
         self.expectedSessionRoutingContract = expectedSessionRoutingContract
+        self.expectedSessionSettings = expectedSessionSettings
         self.sessionID = sessionID
         self.queueMode = queueMode
         self.replyToID = replyToID
         self.expectedLeaf = expectedLeaf
         self.unstructuredMessageFallback = unstructuredMessageFallback
         self.requiresStructuredDelivery = requiresStructuredDelivery
+    }
+
+    func withExpectedSessionSettings(_ expectation: OpenClawChatSessionSettingsExpectation?) -> Self {
+        Self(
+            agentID: self.agentID,
+            expectedSessionRoutingContract: self.expectedSessionRoutingContract,
+            expectedSessionSettings: expectation,
+            sessionID: self.sessionID,
+            queueMode: self.queueMode,
+            replyToID: self.replyToID,
+            expectedLeaf: self.expectedLeaf,
+            unstructuredMessageFallback: self.unstructuredMessageFallback,
+            requiresStructuredDelivery: self.requiresStructuredDelivery)
     }
 }
