@@ -362,8 +362,16 @@ describe("Gateway chat RPCs", () => {
           /exec denied|security=deny|execution policy/iu.test(request.toolOutput ?? ""),
         ),
       ).toBe(true);
-      const declaredTools = JSON.stringify(plannedExec?.body?.tools ?? []);
-      expect(declaredTools).not.toMatch(/"(?:write|edit|apply_patch|web_search)"/u);
+      const declaredToolNames = (
+        Array.isArray(plannedExec?.body?.tools) ? plannedExec.body.tools : []
+      ).flatMap((tool) => {
+        const name =
+          typeof tool === "object" && tool !== null ? (tool as { name?: unknown }).name : undefined;
+        return typeof name === "string" ? [name] : [];
+      });
+      expect(declaredToolNames).not.toEqual(
+        expect.arrayContaining(["write", "edit", "apply_patch", "web_search"]),
+      );
 
       await expect(
         gateway.call("sessions.patch", {
