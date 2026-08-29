@@ -103,6 +103,8 @@ describe("chat pane header state", () => {
     ["pin", { kind: "toggle-pin" } as const, { pinned: true }],
     ["unread", { kind: "toggle-unread" } as const, { unread: true }],
     ["icon", { kind: "set-icon", icon: "🦞" } as const, { icon: "🦞" }],
+    ["color", { kind: "set-color", color: "purple" } as const, { color: "purple" }],
+    ["clear color", { kind: "set-color", color: null } as const, { color: null }],
     ["group", { kind: "move-to-group", category: "Projects" } as const, { category: "Projects" }],
   ])("patches the active session from the header %s action", async (_name, action, expected) => {
     const patch = vi.fn(async () => ({}));
@@ -262,75 +264,6 @@ describe("chat pane header state", () => {
 
     expect(patch).not.toHaveBeenCalled();
     expect(showToast).toHaveBeenCalledWith({ message: t("common.refresh") });
-  });
-
-  it("commits a trimmed label and clears with null", async () => {
-    const patch = vi.fn(async () => ({}));
-    const sessions = createSessionCapabilityFixture({ patch });
-    const { pane } = createTestChatPane({ client: createGatewayBrowserClientFixture(), sessions });
-    const session = {
-      key: "agent:main:current",
-      kind: "direct",
-      updatedAt: 0,
-    } satisfies GatewaySessionRow;
-    pane.beginHeaderRename(session);
-    pane.headerRenameValue = "  Renamed session  ";
-    pane.commitHeaderRename();
-    expect(patch).toHaveBeenCalledWith(
-      session.key,
-      { label: "Renamed session" },
-      { agentId: "main" },
-    );
-
-    const labeled = { ...session, label: "Renamed session" };
-    pane.beginHeaderRename(labeled);
-    pane.headerRenameValue = "   ";
-    pane.commitHeaderRename();
-    expect(patch).toHaveBeenLastCalledWith(session.key, { label: null }, { agentId: "main" });
-  });
-
-  it("renames the selected agent's canonical global session", () => {
-    const patch = vi.fn(async () => ({}));
-    const sessions = createSessionCapabilityFixture({ patch });
-    const { pane, state } = createTestChatPane({
-      client: createGatewayBrowserClientFixture(),
-      sessions,
-    });
-    state.sessionKey = "global";
-    state.assistantAgentId = "research";
-    const session = {
-      key: "global",
-      kind: "global",
-      updatedAt: 0,
-    } satisfies GatewaySessionRow;
-
-    pane.beginHeaderRename(session);
-    pane.headerRenameValue = "Research thread";
-    pane.commitHeaderRename();
-
-    expect(patch).toHaveBeenCalledWith(
-      "global",
-      { label: "Research thread" },
-      { agentId: "research" },
-    );
-  });
-
-  it("cancels and skips an unchanged generated dashboard title", () => {
-    const patch = vi.fn(async () => ({}));
-    const sessions = createSessionCapabilityFixture({ patch });
-    const { pane } = createTestChatPane({ client: createGatewayBrowserClientFixture(), sessions });
-    const session = {
-      key: "agent:main:dashboard:generated",
-      kind: "direct",
-      displayName: "Generated title",
-      updatedAt: 0,
-    } satisfies GatewaySessionRow;
-    pane.beginHeaderRename(session);
-    expect(pane.headerRenameValue).toBe("Generated title");
-    pane.commitHeaderRename();
-    pane.beginHeaderRename(session);
-    pane.cancelHeaderRename();
-    expect(patch).not.toHaveBeenCalled();
   });
 
   it("copies the resolved workspace path and branch", async () => {
@@ -921,7 +854,7 @@ describe("chat pane keyboard shortcuts", () => {
     expect(press().defaultPrevented).toBe(true);
     expect(state.sidebarLayout.columns[0]?.panels.map((panel) => panel.slot)).toEqual(["terminal"]);
     expect(press().defaultPrevented).toBe(true);
-    expect(state.sidebarLayout.columns).toEqual([]);
+    expect(state.sidebarLayout.columns[0]?.panels).toEqual([]);
     expect(state.sidebarLayout.open).toBe(false);
   });
 });

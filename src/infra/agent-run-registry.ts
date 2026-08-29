@@ -61,7 +61,7 @@ type AgentRunRegistryState = {
   queuedRunContextLeases?: WeakMap<AgentRunContext, number>;
   lifecycleGeneration: string;
   sequenceResetHandler?: (runId: string) => void;
-  delegatedAuthorityClosedHandler?: (authority: AgentRunDelegatedAuthority) => void;
+  delegatedAuthorityClosedHandlers?: Set<(authority: AgentRunDelegatedAuthority) => void>;
   version: number;
 };
 
@@ -107,23 +107,23 @@ function notifyDelegatedAuthorityClosed(
   state: AgentRunRegistryState,
   authority: AgentRunDelegatedAuthority,
 ): void {
-  try {
-    state.delegatedAuthorityClosedHandler?.(authority);
-  } catch {
-    // Approval settlement observes lifecycle closure; it cannot block the owner transition.
+  for (const handler of state.delegatedAuthorityClosedHandlers ?? []) {
+    try {
+      handler(authority);
+    } catch {
+      // One observer cannot block closure or prevent other owners from cancelling work.
+    }
   }
 }
 
-/** Installs the Gateway-lifetime observer for exact delegated-authority closure. */
+/** Observe exact delegated-authority closure without displacing other lifecycle owners. */
 export function registerAgentRunDelegatedAuthorityClosedHandler(
   handler: (authority: AgentRunDelegatedAuthority) => void,
 ): () => void {
-  const state = getAgentRunRegistryState();
-  state.delegatedAuthorityClosedHandler = handler;
+  const handlers = (getAgentRunRegistryState().delegatedAuthorityClosedHandlers ??= new Set());
+  handlers.add(handler);
   return () => {
-    if (state.delegatedAuthorityClosedHandler === handler) {
-      state.delegatedAuthorityClosedHandler = undefined;
-    }
+    handlers.delete(handler);
   };
 }
 
@@ -527,9 +527,9 @@ export function listAgentRunsForSession(params: {
   const state = getAgentRunRegistryState();
   const runs: Array<{ runId: string; lifecycleGeneration: string }> = [];
   for (const [runId, context] of state.contexts) {
-    const matches = context.sessionId
-      ? context.sessionId === params.sessionId
-      : context.sessionKey === params.sessionKey;
+    const matches =
+      context.sessionKey === params.sessionKey &&
+      (!context.sessionId || context.sessionId === params.sessionId);
     if (matches && context.lifecycleGeneration === state.lifecycleGeneration) {
       runs.push({ runId, lifecycleGeneration: context.lifecycleGeneration });
     }

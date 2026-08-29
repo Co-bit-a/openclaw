@@ -67,6 +67,7 @@ vi.mock("../../media/outbound-attachment.js", () => ({
 vi.mock("./agent-runner-failure-reply.js", () => ({
   buildEmptyInteractiveReplyPayload: vi.fn(() => undefined),
   buildKnownAgentRunFailureReplyPayload: vi.fn(() => undefined),
+  markPostCompactionModelFailurePayload: (_failure: true | undefined, payload: unknown) => payload,
 }));
 
 vi.mock("./agent-runner-execution.js", () => ({
@@ -78,7 +79,7 @@ vi.mock("./agent-runner-memory.js", () => ({
     sessionEntry,
     outcome: "skipped",
   }),
-  runPreflightCompactionIfNeeded: async ({ sessionEntry }: { sessionEntry?: unknown }) =>
+  runSessionCompactionIfNeeded: async ({ sessionEntry }: { sessionEntry?: unknown }) =>
     sessionEntry,
 }));
 

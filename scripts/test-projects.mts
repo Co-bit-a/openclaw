@@ -6,6 +6,10 @@ import { performance } from "node:perf_hooks";
 import pMap from "p-map";
 import { formatMs } from "./lib/check-timing-summary.mts";
 import {
+  prepareE2eVitestRuntime,
+  prepareVitestRuntime,
+} from "./lib/vitest-build-prerequisites.mts";
+import {
   isCiLikeEnv,
   resolveLocalFullSuiteProfile,
   resolveLocalVitestEnv,
@@ -302,6 +306,24 @@ async function main() {
     printNoChangedTestTargets(args, process.cwd(), baseEnv);
     printTestSummary("skipped", 0, performance.now() - suiteStartedAt);
     return;
+  }
+
+  const e2eSpecs = runSpecs.filter((spec) => spec.config === "test/vitest/vitest.e2e.config.ts");
+  if (e2eSpecs.length > 0) {
+    const preparedEnv = await prepareE2eVitestRuntime(baseEnv);
+    for (const spec of e2eSpecs) {
+      spec.env = { ...spec.env, ...preparedEnv };
+    }
+  } else {
+    const code = await prepareVitestRuntime(
+      runSpecs.map((spec) => ({ configs: [spec.config], includePatterns: spec.includePatterns })),
+      baseEnv,
+    );
+    if (code !== 0) {
+      printTestSummary("failed", 0, performance.now() - suiteStartedAt);
+      process.exitCode = code;
+      return;
+    }
   }
 
   const isFullSuiteRun =

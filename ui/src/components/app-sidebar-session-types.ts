@@ -1,4 +1,5 @@
 import { gatewayOriginScope } from "@openclaw/gateway-client/browser";
+import type { SessionParticipant } from "../../../packages/gateway-protocol/src/schema/session-participant.js";
 import type { SessionPlacementDiskSpace } from "../../../packages/gateway-protocol/src/schema/session-placement.js";
 import type { SessionCatalogPullRequestSummary } from "../../../packages/gateway-protocol/src/schema/sessions-catalog.js";
 import type { SessionVisibility } from "../../../packages/gateway-protocol/src/schema/sessions-sharing.js";
@@ -65,7 +66,7 @@ export type SidebarRecentSession = {
   incognito?: boolean;
   createdActor?: SessionCreatedActor;
   owner?: SessionOwner;
-  participants?: SessionCreatedActor[];
+  participants?: SessionParticipant[];
   participantCount?: number;
   archivedBy?: SessionCreatedActor;
   label: string;
@@ -93,6 +94,7 @@ export type SidebarRecentSession = {
   draftOwnedBySelf?: boolean;
   category?: string;
   icon?: string;
+  color?: string;
   channelAvatarUrl?: string;
   boardFace?: BoardFace;
   channel?: string;
@@ -103,6 +105,8 @@ export type SidebarRecentSession = {
   worktreeId?: string;
   execNode?: string;
   placementState?: SessionPlacementState;
+  placementProviderId?: string;
+  placementProfileId?: string;
   diskSpaceStatus?: SessionPlacementDiskSpace["status"];
   workspaceConflictCount?: number;
   cloudWorkerStopAction: CloudWorkerStopAction | null;
@@ -139,14 +143,19 @@ export type SidebarRecentSession = {
 
 export type SidebarSessionHovercardRow = Pick<
   SidebarRecentSession,
+  | "boardFace"
   | "createdActor"
   | "createdAt"
   | "channelAvatarUrl"
+  | "color"
   | "endedAt"
+  | "hasAutomation"
   | "label"
   | "lastMessagePreview"
   | "participantCount"
   | "participants"
+  | "placementProviderId"
+  | "placementProfileId"
   | "status"
   | "startedAt"
   | "updatedAt"
@@ -236,10 +245,10 @@ export type SidebarSessionPatch = {
   unread?: boolean;
   label?: string | null;
   icon?: string | null;
+  color?: string | null;
   category?: string | null;
 };
 
-export const SIDEBAR_AGENT_SESSION_LIST_LIMIT = 60;
 export const SIDEBAR_SESSION_PAGE_SIZE = 10;
 export const SIDEBAR_SESSION_SEE_LESS_THRESHOLD = 30;
 
@@ -283,7 +292,7 @@ export function loadStoredSidebarSessionsShowCron(): boolean {
 }
 
 export function loadStoredSidebarSessionsShowPreview(): boolean {
-  return getSafeLocalStorage()?.getItem(SIDEBAR_SESSION_SHOW_PREVIEW_STORAGE_KEY) !== "false";
+  return getSafeLocalStorage()?.getItem(SIDEBAR_SESSION_SHOW_PREVIEW_STORAGE_KEY) === "true";
 }
 
 export function loadStoredSidebarSessionsShowSystem(): boolean {

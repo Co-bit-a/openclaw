@@ -10,12 +10,14 @@ import {
   shouldPreserveUserFacingSessionStateForInputProvenance,
 } from "../../../sessions/input-provenance.js";
 import { isCronRunSessionKey } from "../../../sessions/session-key-utils.js";
+import type { UserTurnTranscriptRecorder } from "../../../sessions/user-turn-transcript.types.js";
 import { sessionDeliveryChannel } from "../../../utils/delivery-context.shared.js";
 import {
   INTERNAL_MESSAGE_CHANNEL,
   isGatewayMessageChannel,
   normalizeMessageChannel,
 } from "../../../utils/message-channel.js";
+import { normalizeAgentRunTerminalDeliverySnapshot } from "../../agent-run-terminal-delivery.js";
 import {
   getAgentCommandDeliveryFailure,
   getGatewayAgentResult,
@@ -106,6 +108,7 @@ export async function sendSubagentAnnounceDirectly(params: {
   isSourceSessionEffectsAllowed?: () => boolean;
   isCompletionOwnedByRequesterYield?: () => boolean;
   requesterIsSubagent: boolean;
+  createUserTurnTranscriptRecorder?: (sessionId: string) => UserTurnTranscriptRecorder;
   onDeliveryResult?: (delivery: SubagentAnnounceDeliveryResult) => void;
   signal?: AbortSignal;
   resolveGatewayContext?: import("../../../gateway/server-methods/types.js").GatewayContextResolver;
@@ -261,6 +264,13 @@ export async function sendSubagentAnnounceDirectly(params: {
           ? { debounceMs: requesterQueueSettings.debounceMs }
           : {}),
         waitForTranscriptCommit: true,
+        ...(params.createUserTurnTranscriptRecorder
+          ? {
+              userTurnTranscriptRecorder: params.createUserTurnTranscriptRecorder(
+                requesterActivity.sessionId,
+              ),
+            }
+          : {}),
       };
       // Ordinary subagent and harness handoffs must wait through compaction
       // and transcript retries before treating an active wake as failed.
@@ -524,14 +534,18 @@ export async function sendSubagentAnnounceDirectly(params: {
         error: "completion agent did not use the message tool for message-tool-only delivery",
       };
     }
+    const terminalDelivery = normalizeAgentRunTerminalDeliverySnapshot(
+      directAnnounceResult?.deliveryStatus,
+    );
     const requesterVisibleFinalDelivered = Boolean(
       directAnnounceResult &&
       (hasMessagingToolDeliveryToSource(directAnnounceResult, deliveryTarget, {
         requireFinalReply: true,
       }) ||
         (shouldDeliverAgentFinal &&
-          hasVisibleNonSilentGatewayPayload &&
-          directAnnounceResult.deliveryStatus?.status !== "suppressed")),
+          ((hasVisibleNonSilentGatewayPayload &&
+            directAnnounceResult.deliveryStatus?.status !== "suppressed") ||
+            (terminalDelivery?.status === "sent" && terminalDelivery.resultCount > 0)))),
     );
     const hasVisibleCompletionReply =
       requesterVisibleFinalDelivered ||

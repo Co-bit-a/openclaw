@@ -49,6 +49,34 @@ describe("buildCliRespawnPlan", () => {
     ).toBeNull();
   });
 
+  it.each(["darwin", "linux", "win32"] as const)(
+    "leaves foreground Gmail shutdown with its lifecycle owner on %s",
+    (platform) => {
+      for (const args of [
+        ["webhooks", "gmail", "run", "--account", "fixture@example.com"],
+        ["--profile", "fixture", "webhooks", "gmail", "run"],
+      ]) {
+        expect(
+          buildCliRespawnPlan({
+            argv: ["node", "openclaw", ...args],
+            env: {},
+            execArgv: [],
+            autoNodeExtraCaCerts: "/etc/ssl/certs/ca-certificates.crt",
+            platform,
+          }),
+        ).toBeNull();
+      }
+      expect(
+        buildCliRespawnPlan({
+          argv: ["node", "openclaw", "webhooks", "gmail", "setup"],
+          env: {},
+          execArgv: [],
+          platform,
+        }),
+      ).not.toBeNull();
+    },
+  );
+
   it("adds NODE_EXTRA_CA_CERTS and warning suppression in one respawn", () => {
     const plan = buildCliRespawnPlan({
       argv: ["node", "openclaw", "status"],
@@ -64,6 +92,35 @@ describe("buildCliRespawnPlan", () => {
     expect(respawnPlan.env.NODE_EXTRA_CA_CERTS).toBe("/etc/ssl/certs/ca-certificates.crt");
     expect(respawnPlan.env[OPENCLAW_NODE_EXTRA_CA_CERTS_READY]).toBe("1");
     expect(respawnPlan.env[OPENCLAW_NODE_OPTIONS_READY]).toBe("1");
+    expect(respawnPlan.detachForProcessTree).toBe(true);
+  });
+
+  it("does not respawn gateway status only to suppress warnings", () => {
+    expect(
+      buildCliRespawnPlan({
+        argv: ["node", "openclaw", "gateway", "status", "--json"],
+        env: {},
+        execArgv: [],
+        autoNodeExtraCaCerts: undefined,
+        platform: "linux",
+      }),
+    ).toBeNull();
+  });
+
+  it("preserves NODE_EXTRA_CA_CERTS respawn for gateway status", () => {
+    const plan = buildCliRespawnPlan({
+      argv: ["node", "openclaw", "gateway", "status", "--json"],
+      env: {},
+      execArgv: [],
+      autoNodeExtraCaCerts: "/etc/ssl/certs/ca-certificates.crt",
+      platform: "linux",
+    });
+
+    const respawnPlan = expectCliRespawnPlan(plan);
+    expect(respawnPlan.argv).toEqual(["openclaw", "gateway", "status", "--json"]);
+    expect(respawnPlan.env.NODE_EXTRA_CA_CERTS).toBe("/etc/ssl/certs/ca-certificates.crt");
+    expect(respawnPlan.env[OPENCLAW_NODE_EXTRA_CA_CERTS_READY]).toBe("1");
+    expect(respawnPlan.env[OPENCLAW_NODE_OPTIONS_READY]).toBeUndefined();
     expect(respawnPlan.detachForProcessTree).toBe(true);
   });
 

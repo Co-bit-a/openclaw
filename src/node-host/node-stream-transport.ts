@@ -1,11 +1,10 @@
 import net from "node:net";
-import { TLSSocket } from "node:tls";
 import { WebSocket, type ClientOptions, type RawData } from "ws";
-import { normalizeTlsFingerprint } from "../../packages/gateway-client/src/client-address-utils.js";
 import {
   buildCloudflareAccessHeaders,
   type CloudflareAccessCredentials,
 } from "../../packages/gateway-client/src/cloudflare-access.js";
+import { applyGatewayWebSocketTlsPin } from "../../packages/gateway-client/src/websocket-transport.js";
 
 const MAX_PAYLOAD_BYTES = 1024 * 1024;
 const PAUSE_BUFFERED_BYTES = 4 * 1024 * 1024;
@@ -35,66 +34,23 @@ function attachWebSocketUrl(params: {
   if (url.origin !== gateway.origin || url.pathname !== params.expectedAttachPath) {
     throw new Error(`${params.streamName} stream attachPath must stay on the connected gateway`);
   }
+  // Auxiliary streams share the enrolled node's reverse-proxy mount point.
+  url.pathname = `${gateway.pathname.replace(/\/$/u, "")}${url.pathname}`;
   return url.toString();
 }
 
-function assertTlsSocketFingerprint(socket: TLSSocket, expectedRaw: string): void {
-  const expected = normalizeTlsFingerprint(expectedRaw);
-  const actual = normalizeTlsFingerprint(socket.getPeerCertificate().fingerprint256 ?? "");
-  if (!expected || !actual || actual !== expected) {
-    throw new Error("gateway TLS fingerprint mismatch");
-  }
-}
-
-function createPinnedRequestFinisher(
-  expected: string,
-): NonNullable<ClientOptions["finishRequest"]> {
-  return (request) => {
-    request.once("socket", (socket) => {
-      if (!(socket instanceof TLSSocket)) {
-        request.destroy(new Error("gateway TLS fingerprint mismatch"));
-        return;
-      }
-      socket.once("secureConnect", () => {
-        try {
-          assertTlsSocketFingerprint(socket, expected);
-          request.end();
-        } catch (error) {
-          request.destroy(error instanceof Error ? error : new Error(String(error)));
-        }
-      });
-    });
-  };
-}
-
 function websocketOptions(
-  url: string,
   tlsFingerprint?: string,
   cloudflareAccess?: CloudflareAccessCredentials,
 ): ClientOptions {
-  const edgeHeaders = cloudflareAccess
-    ? { headers: buildCloudflareAccessHeaders(cloudflareAccess) }
-    : {};
-  if (!url.startsWith("wss:") || !tlsFingerprint?.trim()) {
-    return { maxPayload: MAX_PAYLOAD_BYTES, ...edgeHeaders };
-  }
-  return {
+  const options: ClientOptions = {
     maxPayload: MAX_PAYLOAD_BYTES,
-    ...edgeHeaders,
-    rejectUnauthorized: false,
-    finishRequest: createPinnedRequestFinisher(tlsFingerprint),
+    ...(cloudflareAccess ? { headers: buildCloudflareAccessHeaders(cloudflareAccess) } : {}),
   };
-}
-
-function assertGatewayTlsFingerprint(socket: TLSSocket | undefined, expectedRaw?: string): void {
-  if (!expectedRaw?.trim()) {
-    return;
+  if (tlsFingerprint?.trim()) {
+    applyGatewayWebSocketTlsPin(options, tlsFingerprint);
   }
-  const expected = normalizeTlsFingerprint(expectedRaw);
-  const actual = normalizeTlsFingerprint(socket?.getPeerCertificate().fingerprint256 ?? "");
-  if (!expected || !actual || actual !== expected) {
-    throw new Error("gateway TLS fingerprint mismatch");
-  }
+  return options;
 }
 
 async function waitForSocketConnect(socket: net.Socket): Promise<void> {
@@ -211,14 +167,8 @@ export async function runNodeStreamTransport(params: {
   const wsUrl = attachWebSocketUrl(params);
   const ws = new WebSocket(
     wsUrl,
-    websocketOptions(wsUrl, params.gatewayTlsFingerprint, params.gatewayCloudflareAccess),
+    websocketOptions(params.gatewayTlsFingerprint, params.gatewayCloudflareAccess),
   );
-  let gatewayTlsSocket: TLSSocket | undefined;
-  ws.once("upgrade", (response) => {
-    if (response.socket instanceof TLSSocket) {
-      gatewayTlsSocket = response.socket;
-    }
-  });
   let aborted: boolean = params.signal.aborted;
   let resolveAbort!: () => void;
   const abort = new Promise<void>((resolve) => {
@@ -239,7 +189,8 @@ export async function runNodeStreamTransport(params: {
       // Attach first so a refused target closes a claimed ticket instead of leaving it pending.
       await Promise.race([waitForWebSocketOpen(ws), abort]);
       if (!aborted) {
-        socket.connect(params.port, "127.0.0.1");
+        // Like Gateway-local portals, reach dev servers bound to either localhost family.
+        socket.connect({ port: params.port, host: "localhost", autoSelectFamily: true });
         await Promise.race([waitForSocketConnect(socket), abort]);
       }
     } else {
@@ -251,7 +202,6 @@ export async function runNodeStreamTransport(params: {
     if (aborted) {
       return;
     }
-    assertGatewayTlsFingerprint(gatewayTlsSocket, params.gatewayTlsFingerprint);
     ws.pause();
     const splice = createNodeStreamSplice({ socket, ws, streamName: params.streamName });
     await sendAttachMetadata(ws, params.metadata);
