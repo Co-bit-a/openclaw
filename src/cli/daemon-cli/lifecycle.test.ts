@@ -170,15 +170,19 @@ vi.mock("../../daemon/gateway-service-probe-hosts.js", () => ({ resolveGatewaySe
 
 vi.mock("../../infra/ports-probe.js", () => ({ probePortUsage }));
 
-vi.mock("./restart-health.js", () => ({
-  DEFAULT_RESTART_HEALTH_ATTEMPTS: 120,
-  DEFAULT_RESTART_HEALTH_DELAY_MS: 500,
-  waitForGatewayHealthyListener,
-  waitForGatewayHealthyRestart,
-  renderGatewayPortHealthDiagnostics,
-  terminateStaleGatewayPids,
-  renderRestartDiagnostics,
-}));
+vi.mock("./restart-health.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./restart-health.js")>();
+  return {
+    DEFAULT_RESTART_HEALTH_ATTEMPTS: 120,
+    DEFAULT_RESTART_HEALTH_DELAY_MS: 500,
+    waitForGatewayHealthyListener,
+    waitForGatewayHealthyRestart,
+    formatGatewayRestartFailure: actual.formatGatewayRestartFailure,
+    renderGatewayPortHealthDiagnostics,
+    terminateStaleGatewayPids,
+    renderRestartDiagnostics,
+  };
+});
 
 vi.mock("./lifecycle-core.js", () => ({
   runServiceRestart,

@@ -1,5 +1,6 @@
 // Gateway service-start readiness tests cover separate liveness and usable-readiness proof.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { formatGatewayRestartFailure } from "./restart-health-diagnostics.js";
 
 const service = vi.hoisted(() => ({ readCommand: vi.fn() }));
 const runServiceStart = vi.hoisted(() => vi.fn());
@@ -33,6 +34,7 @@ vi.mock("./start-repair.js", () => ({ repairLoadedGatewayServiceForStart: vi.fn(
 vi.mock("./restart-health.js", () => ({
   DEFAULT_RESTART_HEALTH_ATTEMPTS: 120,
   DEFAULT_RESTART_HEALTH_DELAY_MS: 500,
+  formatGatewayRestartFailure,
   renderGatewayPortHealthDiagnostics: vi.fn(),
   renderRestartDiagnostics,
   terminateStaleGatewayPids: vi.fn(),
