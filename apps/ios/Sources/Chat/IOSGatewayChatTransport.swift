@@ -48,6 +48,9 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
                 reason: OpenClawChatTransportUpgradeMessage.routingContract,
                 allowsLiveSend: true)
         }
+        let supportsSettingsCAS = await gateway.supportsServerCapability(
+            .sessionSettingsCAS,
+            ifCurrentRoute: route) == true
         let transport = self
         guard let routingContract = try? await transport.sessionRoutingContract(ifCurrentRoute: route)
         else { return .unavailable(reason: nil) }
@@ -71,11 +74,12 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
                     agentID: agentID,
                     ifCurrentRoute: route)
             },
-            sessionRoutingContract: routingContract))
+            sessionRoutingContract: routingContract,
+            supportsSessionSettingsCAS: supportsSettingsCAS))
     }
 
     func acquireSwarmRouteLease() async -> OpenClawChatSwarmRouteLease? {
-        guard let route = await self.currentSessionMutationRoute() else { return nil }
+        guard let route = await currentSessionMutationRoute() else { return nil }
         let transport = self
         return OpenClawChatSwarmRouteLease(
             isEnabled: { sessionKey in
@@ -101,7 +105,7 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
 
     func acquireSessionMutationRouteLease() async -> OpenClawChatSessionMutationRouteLease? {
         guard let route = await currentSessionMutationRoute() else { return nil }
-        let unreadAckContract = await self.gateway.supportsServerCapability(
+        let unreadAckContract = await gateway.supportsServerCapability(
             .sessionUnreadAckContract,
             ifCurrentRoute: route)
         let transport = self
@@ -390,7 +394,7 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
         }
         let settingsRoute = expectedRoute ?? fallbackRoute
         let settingsSupport = if let settingsRoute {
-            await self.sessionSettingsSupport(ifCurrentRoute: settingsRoute)
+            await sessionSettingsSupport(ifCurrentRoute: settingsRoute)
         } else {
             (settingsContract: false, settingsCAS: false)
         }
@@ -447,7 +451,7 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
         archived: Bool? = nil,
         unread: Bool? = nil) async throws
     {
-        if let routeLease = await self.acquireSessionMutationRouteLease() {
+        if let routeLease = await acquireSessionMutationRouteLease() {
             try await routeLease.patchSession(
                 key: key,
                 expectedSessionID: expectedSessionID,
@@ -577,14 +581,14 @@ struct IOSGatewayChatTransport: OpenClawChatTransport {
     }
 
     func gatewayAdvertisesMethod(_ method: String) async -> Bool? {
-        guard let route = await self.currentSessionMutationRoute() else { return nil }
+        guard let route = await currentSessionMutationRoute() else { return nil }
         return await self.gateway.supportsServerMethod(method, ifCurrentRoute: route)
     }
 
     func fetchProgressCard(sessionKey: String) async throws -> ProgressCard? {
         let target = self.sessionTarget(for: sessionKey)
         let request = OpenClawChatGatewayRequests.progressCardGet(sessionKey: target.sessionKey)
-        let data = try await self.gateway.request(request)
+        let data = try await gateway.request(request)
         let result = try JSONDecoder().decode(ProgressCardGetResult.self, from: data)
         guard !(result.card.value is NSNull) else { return nil }
         return try GatewayPayloadDecoding.decode(result.card, as: ProgressCard.self)

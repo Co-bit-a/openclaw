@@ -432,6 +432,7 @@ extension OpenClawChatViewModel {
                     durationSeconds: $0.durationSeconds)
             },
             thinking: thinking,
+            expectedSessionSettings: self.composerSessionSettingsExpectation(),
             createdAt: Date().timeIntervalSince1970,
             status: .queued,
             retryCount: 0,
@@ -877,20 +878,34 @@ extension OpenClawChatViewModel {
             agentID: command.agentID,
             sessionRoutingContract: command.routingContract)
         {
-            _ = await outbox.markCommandQueued(
+            _ = await outbox.markCommandFailedIfPresent(
                 id: command.id,
                 attemptVersion: command.attemptVersion,
                 retryCount: command.retryCount,
                 lastError: settingsError)
+            self.setOutboxState(.failed(reason: settingsError), forCommandID: command.id)
             self.errorText = settingsError
             return .stop
+        }
+        if routeLease.supportsSessionSettingsCAS,
+           command.expectedSessionSettings == nil
+        {
+            let message = "Session settings were not captured; review and retry this message."
+            _ = await outbox.markCommandFailedIfPresent(
+                id: command.id,
+                attemptVersion: command.attemptVersion,
+                retryCount: command.retryCount,
+                lastError: message)
+            self.setOutboxState(.failed(reason: message), forCommandID: command.id)
+            self.errorText = message
+            return .continueFlush
         }
         self.setOutboxState(.sending, forCommandID: command.id)
         do {
             let response = try await routeLease.sendMessage(
                 sessionKey: command.deliverySessionKey,
                 agentID: command.agentID,
-                expectedSessionSettings: self.composerSessionSettingsExpectation(),
+                expectedSessionSettings: command.expectedSessionSettings,
                 message: command.text,
                 // Preserve the queued level when supported, but never send an
                 // explicit unsupported level after the gate changes.
@@ -920,7 +935,7 @@ extension OpenClawChatViewModel {
         } catch is OpenClawChatTransportSendError {
             // The transport proved this payload never reached its request
             // channel, so it is safe to retry automatically.
-            await outbox.markCommandQueued(
+            _ = await outbox.markCommandQueued(
                 id: command.id,
                 attemptVersion: command.attemptVersion,
                 retryCount: command.retryCount,

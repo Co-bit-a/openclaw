@@ -4,7 +4,7 @@ import OpenClawKit
 import Testing
 @testable import OpenClawChatUI
 
-private func makeOutboxStore() throws -> (
+func makeOutboxStore() throws -> (
     store: OpenClawChatSQLiteTranscriptCache,
     databases: OpenClawClientDatabases,
     directory: URL)
@@ -22,7 +22,7 @@ extension OpenClawChatSQLiteTranscriptCache {
         agentID: String? = nil,
         messages: [OpenClawChatMessage]) async
     {
-        await self.storeCanonicalTranscript(
+        await storeCanonicalTranscript(
             sessionKey: sessionKey,
             agentID: agentID,
             messages: messages,
@@ -30,13 +30,22 @@ extension OpenClawChatSQLiteTranscriptCache {
     }
 }
 
-private func outboxTestCommand(id: String, text: String, createdAt: Double) -> OpenClawChatOutboxCommand {
+func outboxTestCommand(
+    id: String,
+    text: String,
+    createdAt: Double,
+    sessionKey: String = "main",
+    expectedSessionSettings: OpenClawChatSessionSettingsExpectation? = nil) -> OpenClawChatOutboxCommand
+{
     OpenClawChatOutboxCommand(
         id: id,
-        sessionKey: "main",
+        sessionKey: sessionKey,
+        deliverySessionKey: "agent:main:\(sessionKey)",
         routingContract: "per-sender|main|main",
+        agentID: "main",
         text: text,
         thinking: "off",
+        expectedSessionSettings: expectedSessionSettings,
         createdAt: createdAt,
         status: .queued,
         retryCount: 0,
@@ -57,7 +66,7 @@ private struct OutboxSendError: Error, LocalizedError {
     }
 }
 
-private actor OutboxTransportState {
+actor OutboxTransportState {
     enum BranchListingBehavior: Sendable {
         case unsupportedTransport
         case legacyAdminScopeRejection
@@ -110,6 +119,7 @@ private actor OutboxTransportState {
     var sentAgentIDs: [String?] = []
     var historyRequestAgentIDs: [String?] = []
     var sentThinkingLevels: [String] = []
+    var sentSessionSettings: [OpenClawChatSessionSettingsExpectation?] = []
 
     init(healthy: Bool, sendFails: Bool) {
         self.healthy = healthy
@@ -131,25 +141,28 @@ private actor OutboxTransportState {
         agentID: String?,
         message: String,
         idempotencyKey: String,
-        thinking: String)
+        thinking: String,
+        expectedSessionSettings: OpenClawChatSessionSettingsExpectation? = nil)
     {
         self.sentSessionKeys.append(sessionKey)
         self.sentAgentIDs.append(agentID)
         self.sentMessages.append(message)
         self.sentIdempotencyKeys.append(idempotencyKey)
         self.sentThinkingLevels.append(thinking)
+        self.sentSessionSettings.append(expectedSessionSettings)
     }
 }
 
 /// Scripted transport for offline-outbox flows: health is switchable, sends
 /// can be forced to fail, and history synthesizes the durable user rows for
 /// every accepted send (what the gateway would persist).
-private final class OutboxTestTransport: @unchecked Sendable, OpenClawChatTransport {
+final class OutboxTestTransport: @unchecked Sendable, OpenClawChatTransport {
     let state: OutboxTransportState
     private let sessions: [OpenClawChatSessionEntry]
     private let supportsSlashCommands: Bool
     private let requiresRoutingContract: Bool
     private let routeUnavailableReason: String?
+    private let supportsSessionSettingsCAS: Bool
     private let stream: AsyncStream<OpenClawChatTransportEvent>
     private let continuation: AsyncStream<OpenClawChatTransportEvent>.Continuation
 
@@ -159,12 +172,14 @@ private final class OutboxTestTransport: @unchecked Sendable, OpenClawChatTransp
         sessions: [OpenClawChatSessionEntry] = [],
         supportsSlashCommands: Bool = false,
         requiresRoutingContract: Bool = true,
+        supportsSessionSettingsCAS: Bool = false,
         routeUnavailableReason: String? = nil)
     {
         self.state = OutboxTransportState(healthy: healthy, sendFails: sendFails)
         self.sessions = sessions
         self.supportsSlashCommands = supportsSlashCommands
         self.requiresRoutingContract = requiresRoutingContract
+        self.supportsSessionSettingsCAS = supportsSessionSettingsCAS
         self.routeUnavailableReason = routeUnavailableReason
         var cont: AsyncStream<OpenClawChatTransportEvent>.Continuation!
         self.stream = AsyncStream { c in cont = c }
@@ -185,7 +200,7 @@ private final class OutboxTestTransport: @unchecked Sendable, OpenClawChatTransp
     }
 
     func gatewayAdvertisesMethod(_ method: String) async -> Bool? {
-        let advertisedMethods = await self.state.advertisedMethods
+        let advertisedMethods = await state.advertisedMethods
         return advertisedMethods.map { $0.contains(method) }
     }
 
@@ -289,6 +304,7 @@ private final class OutboxTestTransport: @unchecked Sendable, OpenClawChatTransp
             message: message,
             thinking: thinking,
             idempotencyKey: idempotencyKey,
+            expectedSessionSettings: nil,
             expectedRoute: nil)
     }
 
@@ -298,6 +314,7 @@ private final class OutboxTestTransport: @unchecked Sendable, OpenClawChatTransp
         message: String,
         thinking: String,
         idempotencyKey: String,
+        expectedSessionSettings: OpenClawChatSessionSettingsExpectation?,
         expectedRoute: Int?) async throws -> OpenClawChatSendResponse
     {
         if let expectedRoute, await state.routeGeneration != expectedRoute {
@@ -340,7 +357,8 @@ private final class OutboxTestTransport: @unchecked Sendable, OpenClawChatTransp
             agentID: agentID,
             message: message,
             idempotencyKey: idempotencyKey,
-            thinking: thinking)
+            thinking: thinking,
+            expectedSessionSettings: expectedSessionSettings)
         if await self.state.sendFailsAfterRecording {
             throw OutboxSendError()
         }
@@ -370,13 +388,15 @@ private final class OutboxTestTransport: @unchecked Sendable, OpenClawChatTransp
         let routingContract = await state.sessionRoutingContract
         let transport = self
         return .available(OpenClawChatTransportRouteLease(
-            sendTargetedMessage: { sessionKey, agentID, message, thinking, idempotencyKey, _ in
+            sendTargetedMessageWithSettings: {
+                sessionKey, agentID, expectedSettings, message, thinking, idempotencyKey, _ in
                 try await transport.sendMessage(
                     sessionKey: sessionKey,
                     agentID: agentID,
                     message: message,
                     thinking: thinking,
                     idempotencyKey: idempotencyKey,
+                    expectedSessionSettings: expectedSettings,
                     expectedRoute: expectedRoute)
             },
             requestTargetedHistory: { sessionKey, agentID in
@@ -385,7 +405,8 @@ private final class OutboxTestTransport: @unchecked Sendable, OpenClawChatTransp
                     agentID: agentID,
                     expectedRoute: expectedRoute)
             },
-            sessionRoutingContract: routingContract))
+            sessionRoutingContract: routingContract,
+            supportsSessionSettingsCAS: self.supportsSessionSettingsCAS))
     }
 
     /// Gated model patch: `setSessionModel` blocks until `releaseModelPatch`
@@ -431,9 +452,11 @@ private final class OutboxTestTransport: @unchecked Sendable, OpenClawChatTransp
     }
 }
 
-private func outboxSessionEntry(
+func outboxSessionEntry(
     key: String,
-    thinkingLevels: [String]) -> OpenClawChatSessionEntry
+    thinkingLevels: [String],
+    sessionID: String? = nil,
+    permissionMode: OpenClawChatPermissionMode? = nil) -> OpenClawChatSessionEntry
 {
     OpenClawChatSessionEntry(
         key: key,
@@ -444,7 +467,7 @@ private func outboxSessionEntry(
         room: nil,
         space: nil,
         updatedAt: nil,
-        sessionId: nil,
+        sessionId: sessionID,
         systemSent: nil,
         abortedLastRun: nil,
         thinkingLevel: nil,
@@ -455,10 +478,11 @@ private func outboxSessionEntry(
         modelProvider: nil,
         model: nil,
         contextTokens: nil,
-        thinkingLevels: thinkingLevels.map { OpenClawChatThinkingLevelOption(id: $0, label: $0) })
+        thinkingLevels: thinkingLevels.map { OpenClawChatThinkingLevelOption(id: $0, label: $0) },
+        permissionMode: permissionMode)
 }
 
-private func makeOutboxViewModel(
+func makeOutboxViewModel(
     transport: OutboxTestTransport,
     outbox: any OpenClawChatCommandOutbox,
     transcriptCache: (any OpenClawChatTranscriptCache)? = nil,
@@ -582,14 +606,14 @@ private actor ScriptedOutbox: OpenClawChatCommandOutbox {
 
     func loadCommands() async -> [OpenClawChatOutboxCommand] {
         await self.delayLoad()
-        let commands = await self.base.loadCommands()
+        let commands = await base.loadCommands()
         await self.finishHeldLoad()
         return commands
     }
 
     func loadCommandsIfAvailable() async -> [OpenClawChatOutboxCommand]? {
         await self.delayLoad()
-        guard let commands = await self.base.loadCommandsIfAvailable() else { return nil }
+        guard let commands = await base.loadCommandsIfAvailable() else { return nil }
         await self.finishHeldLoad()
         return commands
     }
@@ -649,7 +673,7 @@ private actor ScriptedOutbox: OpenClawChatCommandOutbox {
     }
 
     func cancelCommand(id: String) async -> OpenClawChatOutboxUpdateResult {
-        let result = await self.base.cancelCommand(id: id)
+        let result = await base.cancelCommand(id: id)
         if self.forwarding == .holdingCancellation {
             await self.canceled.open()
             await self.cancellationRelease.wait()
@@ -2167,7 +2191,7 @@ struct ChatViewModelOutboxTests {
     }
 }
 
-private actor DeleteGate {
+actor DeleteGate {
     private var isOpen = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
 

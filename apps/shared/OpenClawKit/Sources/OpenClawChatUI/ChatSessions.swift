@@ -181,7 +181,7 @@ public struct OpenClawChatSessionSettingsPatch: Sendable, Equatable {
 }
 
 /// Authority-bearing session settings a chat turn must still match at admission.
-public struct OpenClawChatSessionSettingsExpectation: Hashable, Sendable {
+public struct OpenClawChatSessionSettingsExpectation: Codable, Hashable, Sendable {
     public let permissionMode: OpenClawChatPermissionMode?
     public let toolOverrides: OpenClawChatSessionToolOverrides?
 

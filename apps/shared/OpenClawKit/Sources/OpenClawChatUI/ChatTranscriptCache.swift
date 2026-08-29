@@ -550,9 +550,9 @@ extension OpenClawChatSQLiteTranscriptCache {
                     sql: """
                     INSERT INTO outbox_commands(
                         gateway_id, client_uuid, session_key, delivery_session_key,
-                        routing_contract, agent_id, text, thinking, created_at,
+                        routing_contract, agent_id, text, thinking, expected_settings_json, created_at,
                         status, attempt_version, branch_epoch, retry_count, last_error, attachment_bytes
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     arguments: [
                         gatewayID,
@@ -563,6 +563,7 @@ extension OpenClawChatSQLiteTranscriptCache {
                         Self.normalizedAgentID(command.agentID),
                         command.text,
                         command.thinking,
+                        Self.encodeSessionSettingsExpectation(command.expectedSessionSettings),
                         command.createdAt,
                         command.status.rawValue,
                         command.attemptVersion,
@@ -1237,7 +1238,8 @@ extension OpenClawChatSQLiteTranscriptCache {
             throw DatabaseError(message: "unknown outbox status")
         }
         let lastError: String = row["last_error"]
-        return OpenClawChatOutboxCommand(
+        let expectedSettingsJSON: String? = row["expected_settings_json"]
+        return try OpenClawChatOutboxCommand(
             id: id,
             sessionKey: row["session_key"],
             deliverySessionKey: row["delivery_session_key"],
@@ -1248,6 +1250,7 @@ extension OpenClawChatSQLiteTranscriptCache {
             text: row["text"],
             attachments: attachments,
             thinking: row["thinking"],
+            expectedSessionSettings: Self.decodeSessionSettingsExpectation(expectedSettingsJSON),
             createdAt: row["created_at"],
             status: status,
             attemptVersion: row["attempt_version"],

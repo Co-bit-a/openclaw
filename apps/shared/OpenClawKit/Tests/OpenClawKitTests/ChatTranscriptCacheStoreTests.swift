@@ -211,7 +211,7 @@ extension OpenClawChatSQLiteTranscriptCache {
         activeLeafEntryID: String? = "leaf-b",
         branchLeafEntryIDs: Set<String> = ["leaf-b"]) async -> [OpenClawChatOutboxCommand]?
     {
-        await self.reconcileBranchScope(
+        await reconcileBranchScope(
             scope,
             previousState: previousState,
             activeLeafEntryID: activeLeafEntryID,
@@ -845,6 +845,7 @@ final class ChatTranscriptCacheStoreTests: ClientDatabaseTestSuite, @unchecked S
             "client-state-agent-id-v4",
             "client-state-outbox-attempt-scope-v5",
             "client-state-outbox-attachment-rekey-v6",
+            "client-state-outbox-settings-expectation-v7",
         ])
     }
 }
@@ -1109,6 +1110,31 @@ final class ClientDatabaseLegacyImportTests: TemporaryDatabaseTestSuite, @unchec
 }
 
 final class ChatCommandOutboxStoreTests: ClientDatabaseTestSuite, @unchecked Sendable {
+    @Test func `session settings expectation survives a cold outbox reopen`() async throws {
+        let expectation = OpenClawChatSessionSettingsExpectation(
+            permissionMode: .guarded,
+            toolOverrides: OpenClawChatSessionToolOverrides(
+                webSearch: false,
+                mcpToolsDeny: ["github": ["delete_issue"]]))
+        #expect(await store.enqueueCommand(OpenClawChatOutboxCommand(
+            id: "settings-bound",
+            sessionKey: "main",
+            deliverySessionKey: "agent:main:main",
+            routingContract: "per-sender|main|main",
+            agentID: "main",
+            text: "safe replay",
+            thinking: "off",
+            expectedSessionSettings: expectation,
+            createdAt: Date().timeIntervalSince1970,
+            status: .queued,
+            retryCount: 0,
+            lastError: nil)))
+        try databases.close()
+
+        let reopened = try OpenClawClientDatabases(directoryURL: directory)
+        #expect(await reopened.store(gatewayID: "gw-a").loadCommands().first?.expectedSessionSettings == expectation)
+    }
+
     @Test func `nil agent rows use the canonical empty scope owner`() async throws {
         let scope = OpenClawChatOutboxScope(sessionKey: "main", agentID: nil)
         #expect(await store.updateLastActiveLeafEntryID("leaf-a", expectedEpoch: 0, for: scope))

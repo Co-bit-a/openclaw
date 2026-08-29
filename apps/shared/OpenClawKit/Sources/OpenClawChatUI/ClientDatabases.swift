@@ -57,7 +57,7 @@ public final class OpenClawClientDatabases: @unchecked Sendable {
             at: directoryURL.appendingPathComponent(Self.gatewayCacheFilename, isDirectory: false))
         let exactRegisteredGatewayIDs = registeredGatewayIDs.map(RegisteredGatewayIDs.init)
         self.resolvePendingGatewayRemovals(registeredGatewayIDs: exactRegisteredGatewayIDs)
-        self.importLegacyDatabases(registeredGatewayIDs: exactRegisteredGatewayIDs)
+        importLegacyDatabases(registeredGatewayIDs: exactRegisteredGatewayIDs)
     }
 
     public func store(gatewayID: String) -> OpenClawChatSQLiteTranscriptCache {
@@ -68,7 +68,7 @@ public final class OpenClawClientDatabases: @unchecked Sendable {
     /// again on foreground because old complete-protection files may have been
     /// unreadable during a locked background launch.
     public func retryLegacyImport(registeredGatewayIDs: [String]? = nil) {
-        self.importLegacyDatabases(
+        importLegacyDatabases(
             registeredGatewayIDs: registeredGatewayIDs.map(RegisteredGatewayIDs.init))
     }
 
@@ -567,6 +567,13 @@ extension OpenClawClientDatabases {
             ALTER TABLE outbox_attachments_v6 RENAME TO outbox_attachments;
             """)
         }
+        // A queued command owns the authority it was captured under. Legacy
+        // rows remain NULL so CAS-capable replay can park them for review.
+        migrator.registerMigration("client-state-outbox-settings-expectation-v7") { db in
+            try db.execute(sql: """
+            ALTER TABLE outbox_commands ADD COLUMN expected_settings_json TEXT;
+            """)
+        }
         try migrator.migrate(queue)
         return queue
     }
@@ -712,7 +719,7 @@ extension OpenClawClientDatabases {
     }
 
     private func importLegacyDatabases(registeredGatewayIDs: RegisteredGatewayIDs?) {
-        let directories = [self.directoryURL] + self.legacyDirectoryURLs
+        let directories = [directoryURL] + self.legacyDirectoryURLs
         let legacyURLs = Set(directories.flatMap(Self.legacyDatabaseURLs(in:)))
         for legacyURL in legacyURLs.sorted(by: { $0.path < $1.path }) {
             do {

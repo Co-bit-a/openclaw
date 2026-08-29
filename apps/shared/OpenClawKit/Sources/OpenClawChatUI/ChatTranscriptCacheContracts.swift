@@ -169,6 +169,9 @@ public struct OpenClawChatOutboxCommand: Hashable, Sendable, Identifiable {
     /// Thinking level captured when the command was queued, so a later flush
     /// never borrows the setting of whichever session is visible then.
     public let thinking: String
+    /// Permission and tool state captured with this command. Durable replay
+    /// must use this command-owned fence, never the currently visible session.
+    public let expectedSessionSettings: OpenClawChatSessionSettingsExpectation?
     /// Seconds since 1970; flush order is strictly ascending `createdAt`.
     public let createdAt: Double
     public var status: Status
@@ -189,6 +192,7 @@ public struct OpenClawChatOutboxCommand: Hashable, Sendable, Identifiable {
         text: String,
         attachments: [OpenClawChatOutboxAttachment] = [],
         thinking: String,
+        expectedSessionSettings: OpenClawChatSessionSettingsExpectation? = nil,
         createdAt: Double,
         status: Status,
         attemptVersion: Int = 1,
@@ -211,6 +215,7 @@ public struct OpenClawChatOutboxCommand: Hashable, Sendable, Identifiable {
         self.text = text
         self.attachments = attachments
         self.thinking = thinking
+        self.expectedSessionSettings = expectedSessionSettings
         self.createdAt = createdAt
         self.status = status
         self.attemptVersion = attemptVersion
