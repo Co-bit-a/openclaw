@@ -66,7 +66,10 @@ function createProfileAppearanceGateway(profileId: string | null) {
     syncSidebarWorkboard: vi.fn(),
   } as unknown as ShellGatewayHost;
   return {
-    completeProfileAppearance(this: void, accent = "#336699") {
+    async completeProfileAppearance(this: void, accent = "#336699") {
+      await vi.waitFor(() => {
+        expect(pendingResponses).toHaveLength(1);
+      });
       const respond = pendingResponses.shift();
       expect(respond, "pending users.prefs.get response").toBeDefined();
       // Config reconciliation can also refresh the theme. Arm this only when
