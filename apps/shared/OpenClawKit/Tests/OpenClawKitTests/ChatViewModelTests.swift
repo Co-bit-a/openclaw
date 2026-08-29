@@ -7599,32 +7599,76 @@ struct ChatViewModelTests {
         })
     }
 
-    @Test func `composer tool state falls back to effective denial when session overrides are absent`() async throws {
-        let tool = OpenClawChatComposerTool(
+    @Test func `composer tool state toggles and clears an inherited effective denial`() async throws {
+        let deniedTool = OpenClawChatComposerTool(
             name: "create_issue",
             label: "Create issue",
             sessionDenied: true)
-        let catalog = OpenClawChatComposerCapabilityCatalog(
-            sessionSettingsAvailable: true,
-            connectors: [OpenClawChatComposerConnector(
-                name: "github",
-                baseEnabled: true,
-                tools: [tool])],
-            connectorsAvailable: true,
-            toolAccessAvailable: true,
-            toolOverrideMutationAvailable: true)
-        let (_, vm) = await makeViewModel(
+        let allowedTool = OpenClawChatComposerTool(
+            name: "create_issue",
+            label: "Create issue")
+        let catalog: @Sendable (OpenClawChatComposerTool) -> OpenClawChatComposerCapabilityCatalog = { tool in
+            OpenClawChatComposerCapabilityCatalog(
+                sessionSettingsAvailable: true,
+                connectors: [OpenClawChatComposerConnector(
+                    name: "github",
+                    baseEnabled: true,
+                    tools: [tool])],
+                connectorsAvailable: true,
+                toolAccessAvailable: true,
+                toolOverrideMutationAvailable: true)
+        }
+        let catalogLoads = AsyncCounter()
+        let (transport, vm) = await makeViewModel(
             historyResponses: [historyPayload()],
             sessionsResponses: [sessionsResponse([
                 sessionEntry(key: "main", updatedAt: 1),
             ])],
-            composerCapabilityCatalog: catalog)
+            composerCapabilityCatalogHook: { _, _ in
+                switch await catalogLoads.increment() {
+                case 1, 3:
+                    catalog(deniedTool)
+                default:
+                    catalog(allowedTool)
+                }
+            })
         try await loadAndWaitBootstrap(vm: vm)
         await vm.loadComposerCapabilities()
 
         #expect(await MainActor.run {
             !vm.composerToolEnabled(server: "github", tool: "create_issue")
         })
+
+        await MainActor.run { vm.toggleComposerTool(server: "github", tool: "create_issue") }
+        try await waitUntil("inherited denial clears") {
+            guard await transport.sessionSettingsPatches().count == 1 else { return false }
+            return await MainActor.run {
+                !vm.composerCapabilityMutationDisabled &&
+                    vm.composerToolEnabled(server: "github", tool: "create_issue")
+            }
+        }
+        #expect(await transport.sessionSettingsPatches()[0].toolOverrides == .some(nil))
+
+        await MainActor.run { vm.toggleComposerTool(server: "github", tool: "create_issue") }
+        try await waitUntil("explicit denial applies") {
+            guard await transport.sessionSettingsPatches().count == 2 else { return false }
+            return await MainActor.run {
+                !vm.composerCapabilityMutationDisabled &&
+                    !vm.composerToolEnabled(server: "github", tool: "create_issue")
+            }
+        }
+        #expect((await transport.sessionSettingsPatches()[1].toolOverrides ?? nil)?
+            .mcpToolsDeny["github"] == ["create_issue"])
+
+        await MainActor.run { vm.clearComposerToolOverrides() }
+        try await waitUntil("explicit denial clears") {
+            guard await transport.sessionSettingsPatches().count == 3 else { return false }
+            return await MainActor.run {
+                !vm.composerCapabilityMutationDisabled &&
+                    vm.composerToolEnabled(server: "github", tool: "create_issue")
+            }
+        }
+        #expect(await transport.sessionSettingsPatches()[2].toolOverrides == .some(nil))
     }
 
     @Test func `composer capability reasons name access and skill blockers`() async {
@@ -7786,6 +7830,50 @@ struct ChatViewModelTests {
         #expect(await transport.sessionSettingsPatches().isEmpty)
         #expect(await MainActor.run { vm.composerPermissionMode } == .guarded)
         #expect(await MainActor.run { vm.composerCapabilityMutationDisabled })
+    }
+
+    @Test func `session switch invalidates a pending capability mutation`() async throws {
+        let leaseGate = AsyncGate()
+        let leaseStarted = AsyncCounter()
+        let catalog = OpenClawChatComposerCapabilityCatalog(
+            sessionSettingsAvailable: true,
+            permissionMutationAvailable: true,
+            canSelectFullPermission: true)
+        let (transport, vm) = await makeViewModel(
+            historyResponses: [
+                historyPayload(sessionKey: "main", sessionId: "sess-main"),
+                historyPayload(sessionKey: "other", sessionId: "sess-other"),
+            ],
+            sessionsResponses: [sessionsResponse([
+                sessionEntry(
+                    key: "main",
+                    updatedAt: 2,
+                    sessionId: "sess-main",
+                    permissionMode: .guarded),
+                sessionEntry(
+                    key: "other",
+                    updatedAt: 1,
+                    sessionId: "sess-other",
+                    permissionMode: .readOnly),
+            ])],
+            composerCapabilityCatalog: catalog,
+            acquireSessionSettingsRouteLeaseHook: {
+                _ = await leaseStarted.increment()
+                await leaseGate.wait()
+            })
+        try await loadAndWaitBootstrap(vm: vm, sessionId: "sess-main")
+        await vm.loadComposerCapabilities()
+
+        await MainActor.run { vm.selectComposerPermissionMode(.full) }
+        try await waitUntil("capability lease acquisition started") {
+            await leaseStarted.current() == 1
+        }
+        await MainActor.run { vm.switchSession(to: "other") }
+
+        #expect(await MainActor.run { !vm.composerCapabilityState.isMutating })
+        await leaseGate.open()
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(await transport.sessionSettingsPatches().isEmpty)
     }
 
     @Test func `same session reconnect invalidates and reloads composer capability scopes`() async throws {

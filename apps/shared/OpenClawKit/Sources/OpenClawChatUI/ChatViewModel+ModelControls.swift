@@ -77,10 +77,14 @@ extension OpenClawChatViewModel {
 
     public var composerInlineEffortLabel: String {
         let effort = self.thinkingOverrideIsInherited
-            ? String(localized: "Inherited \(self.thinkingLevel)")
+            ? String(
+                format: String(localized: "Inherited %@"),
+                self.thinkingLevel)
             : self.thinkingLevel
         return self.fastModeSelectionID == "on"
-            ? String(localized: "\(effort), Fast")
+            ? String(
+                format: String(localized: "%@, Fast"),
+                effort)
             : effort
     }
 

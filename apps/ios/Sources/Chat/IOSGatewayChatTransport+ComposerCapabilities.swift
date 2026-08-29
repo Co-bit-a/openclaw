@@ -80,7 +80,9 @@ extension IOSGatewayChatTransport {
         ].compactMap(\.self)
         let failureMessage = failedSurfaces.isEmpty
             ? nil
-            : String(localized: "Could not load: \(failedSurfaces.joined(separator: ", ")). Retry.")
+            : String(
+                format: String(localized: "Could not load: %@. Retry."),
+                failedSurfaces.joined(separator: ", "))
 
         return OpenClawChatComposerCapabilityCatalog(
             sessionSettingsAvailable: sessionSettingsAvailable,

@@ -321,16 +321,14 @@ extension OpenClawChatViewModel {
         else { return }
         var next = self.composerToolOverrides
         let connector = self.composerCapabilityCatalog.connectors.first { $0.name == server }
-        let baseDenied = self.currentSessionEntry() == nil
-            ? Set(connector?.tools.filter(\.sessionDenied).map(\.name) ?? [])
-            : []
-        var denied = Set(next.mcpToolsDeny[server] ?? baseDenied.sorted())
+        let effectiveDenied = connector?.tools.filter(\.sessionDenied).map(\.name) ?? []
+        var denied = Set(next.mcpToolsDeny[server] ?? effectiveDenied)
         if denied.contains(tool) {
             denied.remove(tool)
         } else {
             denied.insert(tool)
         }
-        if denied == baseDenied {
+        if denied.isEmpty {
             next.mcpToolsDeny.removeValue(forKey: server)
         } else {
             next.mcpToolsDeny[server] = denied.sorted()
@@ -417,6 +415,9 @@ extension OpenClawChatViewModel {
                     self.sessions[index].toolOverrides = result?.toolOverrides ?? toolOverrides
                 }
                 self.composerCapabilityState.notice = notice
+                if toolOverrides != nil {
+                    await self.loadComposerCapabilities(force: true)
+                }
             } catch {
                 guard self.composerCapabilityState.mutationGeneration == mutationGeneration,
                       self.composerCapabilityOwnerID == ownerID,

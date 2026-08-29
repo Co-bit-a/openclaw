@@ -1240,6 +1240,7 @@ extension OpenClawChatViewModel {
 
     /// Clears state owned by the current session/agent before a new identity can consume events.
     private func clearSessionOwnedState() {
+        self.invalidateComposerCapabilities()
         self.modelSelectionID = Self.defaultModelSelectionID
         replaceMessages([])
         self.isShowingCachedTranscript = false
