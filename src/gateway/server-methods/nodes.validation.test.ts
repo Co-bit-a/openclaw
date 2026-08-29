@@ -85,6 +85,7 @@ describe("node and environment request validation", () => {
         {
           code: "INVALID_REQUEST",
           message: expect.stringMatching(`^invalid ${method.replaceAll(".", "\\.")} params: .+`),
+          requestEffect: "not_started",
         },
       ],
     ]);

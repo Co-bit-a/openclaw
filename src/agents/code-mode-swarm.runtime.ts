@@ -71,6 +71,7 @@ async function runAgentSpawnBridge(params: {
   ctx: ToolSearchToolContext;
   signal?: AbortSignal;
   onUpdate?: AgentToolUpdateCallback;
+  onDispatch?: () => void;
 }) {
   const prompt = params.request.args[0];
   const options = isRecord(params.request.args[1]) ? params.request.args[1] : {};
@@ -142,6 +143,7 @@ async function runAgentSpawnBridge(params: {
   Object.defineProperty(spawnInput, SWARM_CODE_MODE_REQUEST_FINGERPRINT, {
     value: requestFingerprint,
   });
+  params.onDispatch?.();
   const called = await params.runtime.callExactId(spawnEntry.id, spawnInput, {
     parentToolCallId: params.parentToolCallId,
     signal: params.signal,
@@ -163,6 +165,7 @@ async function runAgentWaitBridge(params: {
   request: PendingBridgeRequest;
   ctx: ToolSearchToolContext;
   signal?: AbortSignal;
+  onDispatch?: () => void;
 }): Promise<CollectorCompletionResult> {
   const runId = params.request.args[0];
   if (typeof runId !== "string" || !runId.trim()) {
@@ -173,6 +176,7 @@ async function runAgentWaitBridge(params: {
     throw new ToolInputError("agents.run wait requires session identity.");
   }
   const requesterSessionKey = resolveCodeModeRequesterSessionKey(params.ctx);
+  params.onDispatch?.();
   return await waitForCollectorCompletion({
     runId: runId.trim(),
     currentSessionKeys: new Set([rawSessionKey, requesterSessionKey]),
@@ -185,6 +189,7 @@ async function runAgentWaitBridge(params: {
 function runSwarmNoteBridge(params: {
   request: PendingBridgeRequest;
   ctx: ToolSearchToolContext;
+  onDispatch?: () => void;
 }): { ok: true } {
   const note = isRecord(params.request.args[0]) ? params.request.args[0] : undefined;
   const kind = note?.kind;
@@ -196,6 +201,7 @@ function runSwarmNoteBridge(params: {
   if (!sessionKey) {
     throw new ToolInputError("swarmNote requires session identity.");
   }
+  params.onDispatch?.();
   emitSessionLifecycleEvent({
     sessionKey,
     reason: "swarm-note",

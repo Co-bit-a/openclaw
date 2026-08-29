@@ -30,6 +30,7 @@ import { sanitizeToolArgs } from "./embedded-agent-tool-results.js";
 import { buildAgentHarnessQuestionPromptPayload } from "./harness/user-input-bridge.js";
 import type { AgentEvent } from "./runtime/index.js";
 import { inferToolMetaFromArgsCore, isCommandBearingToolCall } from "./tool-display.js";
+import type { ToolEffectClassifier } from "./tool-effect-receipt.js";
 import { resolveFileMutationToolName } from "./tool-mutation-names.js";
 import { buildToolMutationState } from "./tool-mutation.js";
 import { normalizeToolPolicyName } from "./tool-policy.js";
@@ -208,8 +209,19 @@ export function buildToolCallSummary(
   instanceReplaySafe: boolean,
   ownerKey: string | undefined,
   structuredReplaySafe: boolean,
+  classifyEffect?: ToolEffectClassifier,
 ): ToolCallSummary {
-  const mutation = buildToolMutationState(toolName, args, ownerKey ? { ownerKey } : undefined);
+  let ownerClass: ReturnType<ToolEffectClassifier> | undefined;
+  try {
+    ownerClass = classifyEffect?.(args);
+  } catch {
+    ownerClass = "unknown";
+  }
+  const mutation = ownerClass
+    ? { mutatingAction: ownerClass === "mutation", replaySafe: ownerClass === "read" }
+    : ownerKey
+      ? buildToolMutationState(toolName, args, { ownerKey })
+      : buildToolMutationState(toolName, args);
   return {
     meta,
     commandBearing: isCommandBearingToolCall(toolName, args),
@@ -217,6 +229,7 @@ export function buildToolCallSummary(
     mutatingAction: mutation.mutatingAction,
     ...(ownerKey ? { ownerKey } : {}),
     replaySafe:
+      ownerClass === "read" ||
       (instanceReplaySafe && !mutation.mutatingAction) ||
       (structuredReplaySafe && mutation.replaySafe),
   };
@@ -480,6 +493,7 @@ export function handleToolExecutionStart(
       instanceReplaySafe,
       ctx.params.sideEffectToolOwners?.get(toolName),
       false,
+      ctx.params.toolEffectClassifiers?.get(toolName),
     );
     ctx.state.toolMetaById.set(toolCallId, callSummary);
     ctx.log.debug(

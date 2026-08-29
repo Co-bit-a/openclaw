@@ -12,6 +12,7 @@ import { ADMIN_SCOPE } from "../../gateway/operator-scopes.js";
 import { resolveDefaultSecretProviderAlias } from "../../secrets/ref-contract.js";
 import { stringEnum } from "../schema/string-enum.js";
 import { describeSecretsTool } from "../tool-description-presets.js";
+import { createActionEffectClassifier } from "../tool-effect-receipt.js";
 import { normalizeQuestionTimeoutSeconds } from "./ask-user-tool-normalization.js";
 import { beginAskUserPromptDelivery } from "./ask-user-tool.js";
 import { type AnyAgentTool, readToolStringParam, ToolInputError } from "./common.js";
@@ -24,6 +25,11 @@ import { callGatewayTool } from "./gateway.js";
 import { jsonResult, textResult } from "./tool-results.js";
 
 type SecretStoreKind = "secret";
+const classifySecretsEffect = createActionEffectClassifier({
+  request: "mutation",
+  list: "read",
+  delete: "mutation",
+});
 const SecretsToolSchema = Type.Object(
   {
     action: stringEnum(["request", "list", "delete"], {
@@ -238,6 +244,7 @@ export function createSecretsTool(params: {
     name: "secrets",
     description: describeSecretsTool(),
     parameters: SecretsToolSchema,
+    classifyEffect: classifySecretsEffect,
     execute: async (toolCallId, args, signal) => {
       if (!isRecord(args)) {
         throw new ToolInputError("secrets arguments must be an object");

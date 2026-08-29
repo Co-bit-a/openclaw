@@ -119,10 +119,9 @@ export async function handleToolExecutionEnd(
     cancelAskUserPromptDelivery(toolCallId, ctx.params.sessionKey, ctx.params.runId);
   }
   const runId = ctx.params.runId;
-  const isError = evt.isError;
   const result = evt.result;
   const toolSendReceiptResult = ctx.consumeToolSendReceipt?.(toolCallId);
-  const observerIsError = isError || isToolResultError(result);
+  const observerIsError = evt.isError || isToolResultError(result);
   const sanitizedResult = sanitizeToolResult(result);
   const approvalUnavailable =
     isExecToolName(toolName) &&
@@ -175,6 +174,7 @@ export async function handleToolExecutionEnd(
     initialCallSummary?.instanceReplaySafe === true,
     initialCallSummary?.ownerKey,
     structuredReplaySafe,
+    ctx.params.toolEffectClassifiers?.get(toolName),
   );
   // A racing observer can consume the active wrapper boundary. Settled and
   // custom producers use their terminal fact, while policy blocks override it.
@@ -236,7 +236,8 @@ export async function handleToolExecutionEnd(
     executionStarted,
     replaySafe: callSummary.replaySafe,
     outcome: isToolError ? "failure" : "success",
-    ...(callSummary.ownerKey
+    // Finalized exact reads are authoritative; use owner fallback only for other outcomes.
+    ...(callSummary.ownerKey && !callSummary.replaySafe
       ? {
           ownerMutation: { ownerKey: callSummary.ownerKey },
         }

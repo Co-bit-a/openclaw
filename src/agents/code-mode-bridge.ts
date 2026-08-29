@@ -63,7 +63,9 @@ async function callNodesTool(params: {
   signal?: AbortSignal;
   onUpdate?: AgentToolUpdateCallback;
   input: Record<string, unknown>;
+  onDispatch?: () => void;
 }): Promise<unknown> {
+  params.onDispatch?.();
   return await params.runtime.callValue(CODE_MODE_NODES_TOOL_ID, params.input, {
     includeMcp: false,
     parentToolCallId: params.parentToolCallId,
@@ -93,6 +95,7 @@ async function runNodesBridge(params: {
   request: PendingBridgeRequest;
   signal?: AbortSignal;
   onUpdate?: AgentToolUpdateCallback;
+  onDispatch?: () => void;
 }): Promise<unknown> {
   const values = params.request.args;
   const action = values[0];
@@ -204,6 +207,10 @@ export async function runBridgeRequest(params: {
 }): Promise<SettledBridgeRequest> {
   const catalogProjection = params.catalogProjection;
   let effectReceipt: ToolEffectReceipt | undefined;
+  let targetDispatched = false;
+  const markTargetDispatched = () => {
+    targetDispatched = true;
+  };
   try {
     const values = Array.isArray(params.request.args) ? params.request.args : [];
     let value: unknown;
@@ -274,6 +281,7 @@ export async function runBridgeRequest(params: {
             yieldMs: Math.max(1, Math.min(1_000, Math.floor(params.remainingMs / 4))),
           };
         }
+        markTargetDispatched();
         const called = await params.runtime.callExactId(binding.id, input, {
           parentToolCallId: params.parentToolCallId,
           signal: params.signal,
@@ -287,7 +295,7 @@ export async function runBridgeRequest(params: {
         break;
       }
       case "nodes": {
-        value = await runNodesBridge(params);
+        value = await runNodesBridge({ ...params, onDispatch: markTargetDispatched });
         break;
       }
       case "yield": {
@@ -325,6 +333,7 @@ export async function runBridgeRequest(params: {
                 `namespace tool is not visible in the run catalog: ${request.toolName}`,
               );
             }
+            markTargetDispatched();
             const called = await params.runtime.callExactId(entry.id, request.input, {
               parentToolCallId: params.parentToolCallId,
               signal: params.signal,
@@ -359,7 +368,10 @@ export async function runBridgeRequest(params: {
         // reads, or note publication, even when the cancellation race has settled.
         signal?.throwIfAborted();
         requireCodeModeSwarmEnabled(params.ctx);
-        value = await handlers[params.request.method](params);
+        value = await handlers[params.request.method]({
+          ...params,
+          onDispatch: markTargetDispatched,
+        });
         break;
       }
       case "skillsList": {
@@ -419,7 +431,8 @@ export async function runBridgeRequest(params: {
       registerTrustedToolNoStartError(settled);
     }
     effectReceipt =
-      consumeToolEffectReceipt(error) ?? (trustedNoStart ? { state: "not_started" } : undefined);
+      consumeToolEffectReceipt(error) ??
+      (trustedNoStart || !targetDispatched ? { state: "not_started" } : undefined);
     return effectReceipt ? registerToolEffectReceipt(settled, effectReceipt) : settled;
   }
 }

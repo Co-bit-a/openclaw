@@ -1187,6 +1187,18 @@ describe("browser tool snapshot maxChars", () => {
     ).rejects.toThrow(/profile="user" cannot use the sandbox browser/i);
   });
 
+  it("pins an omitted system-profile import target to host before sandbox defaults", async () => {
+    const tool = createBrowserTool({ sandboxBridgeUrl: "http://127.0.0.1:9999" });
+
+    expect(() =>
+      tool.finalizeBeforeToolCallParams?.({ action: "importprofile" }, undefined),
+    ).not.toThrow();
+    await tool.execute?.("call-1", { action: "importprofile" });
+
+    expect(browserClientMocks.browserImportProfile).toHaveBeenCalledOnce();
+    expect(gatewayMocks.callGatewayTool).not.toHaveBeenCalled();
+  });
+
   it("lets the server choose snapshot format when the user does not request one", async () => {
     const tool = createBrowserTool();
     await tool.execute?.("call-1", { action: "snapshot", target: "host", profile: "user" });
@@ -4935,6 +4947,47 @@ describe("browser observation actions and tab previews", () => {
       ).rejects.toThrow(/existing-session.*snapshot.*managed/);
     },
   );
+
+  it("rejects explicit unsupported existing-session actions before dispatch", () => {
+    setResolvedBrowserProfiles({ user: { driver: "existing-session", attachOnly: true } });
+    const tool = createBrowserTool();
+
+    expect(() =>
+      tool.finalizeBeforeToolCallParams?.(
+        { action: "requests", target: "host", profile: "user" },
+        undefined,
+      ),
+    ).toThrow(/existing-session.*snapshot.*managed/);
+    expect(gatewayMocks.callGatewayTool).not.toHaveBeenCalled();
+  });
+
+  it("resolves the omitted target to host before existing-session validation", () => {
+    setResolvedBrowserProfiles({ user: { driver: "existing-session", attachOnly: true } });
+    const tool = createBrowserTool();
+
+    expect(() =>
+      tool.finalizeBeforeToolCallParams?.({ action: "requests", profile: "user" }, undefined),
+    ).toThrow(/existing-session.*snapshot.*managed/);
+    expect(gatewayMocks.callGatewayTool).not.toHaveBeenCalled();
+  });
+
+  it("resolves the omitted target to sandbox before profile validation", () => {
+    setResolvedBrowserProfiles({ user: { driver: "existing-session", attachOnly: true } });
+    const tool = createBrowserTool({ sandboxBridgeUrl: "http://127.0.0.1:9999" });
+
+    expect(() =>
+      tool.finalizeBeforeToolCallParams?.({ action: "snapshot", profile: "user" }, undefined),
+    ).toThrow(/profile="user" cannot use the sandbox browser/i);
+    expect(gatewayMocks.callGatewayTool).not.toHaveBeenCalled();
+  });
+
+  it("classifies browser reads, destructive clears, and navigation", () => {
+    const classify = createBrowserTool().classifyEffect;
+    expect(classify?.({ action: "snapshot" })).toBe("read");
+    expect(classify?.({ action: "requests" })).toBe("read");
+    expect(classify?.({ action: "requests", clear: true })).toBe("mutation");
+    expect(classify?.({ action: "navigate" })).toBe("mutation");
+  });
 
   it("validates all emulation settings before applying anything", async () => {
     const tool = createBrowserTool();

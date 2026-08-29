@@ -16,6 +16,7 @@ import { normalizeToolPolicyName } from "../../tool-policy.js";
 import {
   collectReplaySafeToolNames,
   collectSideEffectToolOwners,
+  collectToolEffectClassifiers,
   isAgentToolReplaySafe,
 } from "../../tool-replay-safety.js";
 import { addClientToolsToToolSearchCatalog, type ToolSearchCatalogRef } from "../../tool-search.js";
@@ -165,6 +166,10 @@ export function prepareEmbeddedAttemptClientTools(params: {
         ),
     },
   );
+  const toolEffectClassifiers = collectToolEffectClassifiers([
+    ...params.uncompactedEffectiveTools,
+    ...clientToolDefs,
+  ]);
   const addClientToolsToCatalog = params.codeModeControlsEnabledForRun
     ? addClientToolsToCodeModeCatalog
     : addClientToolsToToolSearchCatalog;
@@ -208,6 +213,7 @@ export function prepareEmbeddedAttemptClientTools(params: {
     replaySafeTools,
     codeModeExecToolNames,
     sideEffectToolOwners,
+    toolEffectClassifiers,
     sessionToolAllowlist,
   };
 }
