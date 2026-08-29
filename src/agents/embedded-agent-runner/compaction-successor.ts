@@ -4,8 +4,8 @@ import {
   parseSqliteSessionFileMarker,
 } from "../../config/sessions/legacy-sqlite-marker.js";
 import {
-  listSessionEntriesCore,
-  loadSessionEntry,
+  listSessionEntriesReadOnly,
+  loadSessionEntryReadOnly,
   type SessionTranscriptRuntimeTarget,
 } from "../../config/sessions/session-accessor.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
@@ -62,7 +62,7 @@ export async function resolveContextEngineCompactionSuccessor(params: {
     }
     const isSessionKey = successorFile.startsWith("agent:");
     const keyedEntry = isSessionKey
-      ? loadSessionEntry({
+      ? loadSessionEntryReadOnly({
           agentId: current.agentId,
           sessionKey: successorFile,
           storePath: current.storePath,
@@ -78,14 +78,14 @@ export async function resolveContextEngineCompactionSuccessor(params: {
     }
     const keyedSessionId = isSessionKey ? (successorId ?? keyedEntry?.sessionId) : undefined;
     const retainedMarkerEntry = marker
-      ? loadSessionEntry({
+      ? loadSessionEntryReadOnly({
           agentId: marker.agentId,
           sessionKey: current.sessionKey,
           storePath: marker.storePath,
         })
       : undefined;
     const markerMatches = marker
-      ? listSessionEntriesCore({
+      ? listSessionEntriesReadOnly({
           agentId: marker.agentId,
           storePath: marker.storePath,
         }).filter(({ entry }) => entry.sessionId === marker.sessionId)

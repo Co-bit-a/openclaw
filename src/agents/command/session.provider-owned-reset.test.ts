@@ -8,7 +8,7 @@ const hoisted = vi.hoisted(() => ({
 }));
 
 vi.mock("../../config/sessions/session-accessor.js", () => ({
-  listSessionEntriesCore: () =>
+  listSessionEntriesReadOnly: () =>
     Object.entries(hoisted.store).map(([sessionKey, entry]) => ({
       sessionKey,
       entry,

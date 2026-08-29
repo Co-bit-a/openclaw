@@ -9,15 +9,18 @@ import {
 import { createEmbeddedRunSessionPromptState } from "./session-prompt-state.js";
 
 const sessionAccessorMocks = vi.hoisted(() => ({
-  listSessionEntriesCore: vi.fn(() => []),
+  listSessionEntriesReadOnly: vi.fn(() => []),
   loadSessionEntry: vi.fn(),
   updateSessionEntry: vi.fn(async () => undefined),
 }));
 
-vi.mock("../../../config/sessions/session-accessor.js", () => sessionAccessorMocks);
+vi.mock("../../../config/sessions/session-accessor.js", () => ({
+  ...sessionAccessorMocks,
+  loadSessionEntryReadOnly: sessionAccessorMocks.loadSessionEntry,
+}));
 
 beforeEach(() => {
-  sessionAccessorMocks.listSessionEntriesCore.mockReset().mockReturnValue([]);
+  sessionAccessorMocks.listSessionEntriesReadOnly.mockReset().mockReturnValue([]);
   sessionAccessorMocks.loadSessionEntry.mockReset();
   sessionAccessorMocks.updateSessionEntry.mockReset().mockResolvedValue(undefined);
 });
@@ -290,7 +293,7 @@ describe("applyEmbeddedAttemptSessionIdentity", () => {
       sessionId: "session-before",
       updatedAt: 1,
     });
-    sessionAccessorMocks.listSessionEntriesCore.mockReturnValue([
+    sessionAccessorMocks.listSessionEntriesReadOnly.mockReturnValue([
       {
         sessionKey: "agent:main:other",
         entry: { sessionId: "session-after", updatedAt: 2 },

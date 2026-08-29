@@ -27,7 +27,7 @@ import {
   resolveSessionResetPolicy,
 } from "../../config/sessions/reset-policy.js";
 import { resolveChannelResetConfig, resolveSessionResetType } from "../../config/sessions/reset.js";
-import { listSessionEntriesCore } from "../../config/sessions/session-accessor.js";
+import { listSessionEntriesReadOnly } from "../../config/sessions/session-accessor.js";
 import { resolveSessionKey } from "../../config/sessions/session-key.js";
 import {
   resolvePersistedSessionStoreOwner,
@@ -157,7 +157,7 @@ function loadCommandSessionStore(params: {
   storePath: string;
 }): Record<string, InternalSessionEntry> {
   return Object.fromEntries(
-    listSessionEntriesCore({
+    listSessionEntriesReadOnly({
       storePath: params.storePath,
       ...(params.agentId ? { agentId: params.agentId } : {}),
       ...(params.clone === false ? { clone: false } : {}),
