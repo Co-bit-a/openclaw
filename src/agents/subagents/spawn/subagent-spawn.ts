@@ -694,6 +694,7 @@ export async function spawnSubagentDirect(
       ...(collectorSessionKey ? { sessionKey: collectorSessionKey } : {}),
       runId: childRunId,
       mode: spawnMode,
+      expectsCompletionMessage: shouldAnnounceCompletion,
       context: preparedSpawnContext.mode,
       taskName,
       note: preparedSpawnContext.forkFallbackNote

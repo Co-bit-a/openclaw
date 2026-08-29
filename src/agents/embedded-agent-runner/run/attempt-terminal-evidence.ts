@@ -1,6 +1,9 @@
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../../../auto-reply/tokens.js";
 /** Records attempt replay safety and terminal side-effect evidence. */
-import { hasAcceptedSessionSpawn } from "../../accepted-session-spawn.js";
+import {
+  hasAcceptedSessionSpawn,
+  hasCompletionMessageSessionSpawn,
+} from "../../accepted-session-spawn.js";
 import { hasMessagingToolDeliveryEvidence } from "../delivery-evidence.js";
 import type { RunEmbeddedAgentParams } from "./params.js";
 import type { EmbeddedRunAttemptResult } from "./types.js";
@@ -140,7 +143,7 @@ export function shouldContinueInteractiveAcceptedSessionSpawns(params: {
 }): boolean {
   const { attempt, run } = params;
   if (
-    !hasAcceptedSessionSpawn(attempt.acceptedSessionSpawns) ||
+    !hasCompletionMessageSessionSpawn(attempt.acceptedSessionSpawns) ||
     attempt.terminal.kind !== "ok" ||
     attempt.yieldDetected === true ||
     run.replyOperation?.turnKind !== "visible" ||

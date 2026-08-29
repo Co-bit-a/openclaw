@@ -61,6 +61,7 @@ export type SpawnSubagentResult = {
   runId?: string;
   mode?: SpawnSubagentMode;
   taskName?: string;
+  expectsCompletionMessage?: boolean;
   note?: string;
   /** Fully resolved model ref applied to the spawned child session. */
   resolvedModel?: string;

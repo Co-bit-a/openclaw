@@ -444,7 +444,13 @@ describe("terminal resolution", () => {
 
   it("keeps an empty visible parent alive for accepted completion children", async () => {
     const attempt = makeEmbeddedRunnerAttempt({
-      acceptedSessionSpawns: [{ runId: "child-run", childSessionKey: "agent:main:subagent:child" }],
+      acceptedSessionSpawns: [
+        {
+          runId: "child-run",
+          childSessionKey: "agent:main:subagent:child",
+          expectsCompletionMessage: true,
+        },
+      ],
     });
 
     const resolved = await resolveEmbeddedRunTerminal(
@@ -462,6 +468,37 @@ describe("terminal resolution", () => {
       { text: "I’m continuing this work and will send the result when it is ready." },
     ]);
     expect(resolved.result.meta.continuationPending).toBe(true);
+  });
+
+  it("reports an empty visible parent that started only a collector", async () => {
+    const attempt = makeEmbeddedRunnerAttempt({
+      replayMetadata: { hadPotentialSideEffects: true, replaySafe: false },
+      currentAttemptReplayMetadata: { hadPotentialSideEffects: true, replaySafe: false },
+      acceptedSessionSpawns: [
+        {
+          runId: "collector-run",
+          childSessionKey: "agent:main:subagent:collector",
+          expectsCompletionMessage: false,
+        },
+      ],
+    });
+    const input = makeTerminalInput({
+      attempt,
+      runParams: { replyOperation: { turnKind: "visible" } as never },
+    });
+
+    const resolved = await resolveEmbeddedRunTerminal(input);
+
+    expect(resolved.action).toBe("complete");
+    if (resolved.action === "complete") {
+      expect(resolved.result.payloads).toEqual([
+        {
+          text: "⚠️ Agent couldn't generate a response. Note: some tool actions may have already been executed — please verify before retrying.",
+          isError: true,
+        },
+      ]);
+      expect(resolved.result.meta.continuationPending).toBeUndefined();
+    }
   });
 
   it("does not add a continuation status when the parent already replied", async () => {
@@ -493,7 +530,13 @@ describe("terminal resolution", () => {
   it("does not add a continuation status after an unelaborated message delivery", async () => {
     const attempt = makeEmbeddedRunnerAttempt({
       didSendViaMessagingTool: true,
-      acceptedSessionSpawns: [{ runId: "child-run", childSessionKey: "agent:main:subagent:child" }],
+      acceptedSessionSpawns: [
+        {
+          runId: "child-run",
+          childSessionKey: "agent:main:subagent:child",
+          expectsCompletionMessage: true,
+        },
+      ],
     });
 
     const resolved = await resolveEmbeddedRunTerminal(
