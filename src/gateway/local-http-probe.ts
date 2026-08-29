@@ -11,7 +11,7 @@ export type GatewayHttpProbeResponse = {
   body: string;
 };
 
-export type GatewayLocalProbeTarget = {
+type GatewayLocalProbeTarget = {
   url: string;
   tlsFingerprint?: string;
 };
@@ -134,19 +134,21 @@ export function createConfiguredGatewayLocalProbe(
 
   return {
     async requestHttp(params) {
-      const tlsFingerprint = await resolveTlsFingerprint();
-      if (tlsConfig?.enabled === true && !tlsFingerprint) {
+      const resolvedTlsFingerprint = await resolveTlsFingerprint();
+      if (tlsConfig?.enabled === true && !resolvedTlsFingerprint) {
         return null;
       }
       return await requestGatewayLocalHttpProbe({
         ...params,
-        ...(tlsFingerprint ? { tlsFingerprint } : {}),
+        ...(resolvedTlsFingerprint ? { tlsFingerprint: resolvedTlsFingerprint } : {}),
       });
     },
     async resolveWebSocketTarget(port) {
-      const tlsFingerprint = await resolveTlsFingerprint();
+      const resolvedTlsFingerprint = await resolveTlsFingerprint();
       if (tlsConfig?.enabled === true) {
-        return tlsFingerprint ? { url: `wss://127.0.0.1:${port}`, tlsFingerprint } : null;
+        return resolvedTlsFingerprint
+          ? { url: `wss://127.0.0.1:${port}`, tlsFingerprint: resolvedTlsFingerprint }
+          : null;
       }
       return { url: `ws://127.0.0.1:${port}` };
     },

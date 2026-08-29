@@ -306,12 +306,6 @@ export async function resolveGatewayRestartProbeContext(
   return { auth: resolved.auth, config: cfg };
 }
 
-export async function resolveGatewayRestartProbeAuth(
-  env: NodeJS.ProcessEnv | undefined,
-): Promise<GatewayRestartProbeAuth | undefined> {
-  return (await resolveGatewayRestartProbeContext(env)).auth;
-}
-
 export async function inspectGatewayPortHealth(params: {
   port: number;
   auth?: GatewayRestartProbeAuth;
