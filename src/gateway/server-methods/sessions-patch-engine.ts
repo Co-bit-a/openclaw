@@ -31,7 +31,7 @@ import {
   resolveGatewaySessionStoreTargetWithStore,
   type SessionsPatchResult,
 } from "../session-utils.js";
-import { projectSessionsPatchEntry } from "../sessions-patch.js";
+import { projectSessionsPatchEntry, sessionToolOverridesEqual } from "../sessions-patch.js";
 import { gatewayClientSessionCreator } from "./gateway-client-identity.js";
 import { emitSessionsChanged } from "./session-change-event.js";
 import { resolveOperatorSessionCreation } from "./session-creation-provenance.js";
@@ -232,6 +232,26 @@ async function executeSessionPatchMutations(params: {
     // its public identity fields so closures can never reach hooks or entries.
     const { commitGuard: _commitGuard, ...identity } = input;
     const fullPatch: SessionsPatchParams = { ...params.patch, ...identity };
+    if (fullPatch.expectedPermissionMode !== undefined && fullPatch.permissionMode === undefined) {
+      outcomes[index] = {
+        ok: false,
+        error: errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          "expectedPermissionMode requires a permissionMode replacement.",
+        ),
+      };
+      continue;
+    }
+    if (fullPatch.expectedToolOverrides !== undefined && fullPatch.toolOverrides === undefined) {
+      outcomes[index] = {
+        ok: false,
+        error: errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          "expectedToolOverrides requires a toolOverrides replacement.",
+        ),
+      };
+      continue;
+    }
     let initialPlacementPatchError: string | undefined;
     try {
       initialPlacementPatchError = resolveSessionWorkerPlacementPatchError({
@@ -397,12 +417,22 @@ async function executeSessionPatchMutations(params: {
                           projectedOutcomes.push({ ok: false, error: ownershipError });
                           continue;
                         }
+                        // Compare tool policy only inside the serialized writer snapshot. A
+                        // preflight comparison can stale behind another queued restriction.
                         const expectedSessionChanged =
                           (target.fullPatch.expectedSessionId !== undefined &&
                             existingEntry?.sessionId !== target.fullPatch.expectedSessionId) ||
                           (target.fullPatch.expectedLifecycleRevision !== undefined &&
                             existingEntry?.lifecycleRevision !==
-                              target.fullPatch.expectedLifecycleRevision);
+                              target.fullPatch.expectedLifecycleRevision) ||
+                          (target.fullPatch.expectedPermissionMode !== undefined &&
+                            (existingEntry?.permissionMode ?? null) !==
+                              target.fullPatch.expectedPermissionMode) ||
+                          (target.fullPatch.expectedToolOverrides !== undefined &&
+                            !sessionToolOverridesEqual(
+                              existingEntry?.toolOverrides,
+                              target.fullPatch.expectedToolOverrides,
+                            ));
                         const lifecycleEntryRemoved =
                           target.initialEntry !== undefined && existingEntry === undefined;
                         const archiveTargetChanged =
@@ -687,6 +717,12 @@ export async function executeSessionPatch(params: {
       : {}),
     ...(params.patch.expectedLifecycleRevision !== undefined
       ? { expectedLifecycleRevision: params.patch.expectedLifecycleRevision }
+      : {}),
+    ...(params.patch.expectedPermissionMode !== undefined
+      ? { expectedPermissionMode: params.patch.expectedPermissionMode }
+      : {}),
+    ...(params.patch.expectedToolOverrides !== undefined
+      ? { expectedToolOverrides: params.patch.expectedToolOverrides }
       : {}),
     expectedMarkedUnreadAt: params.patch.expectedMarkedUnreadAt,
   };

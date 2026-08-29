@@ -265,11 +265,18 @@ describe("lazy protocol validators", () => {
         },
       }),
       sessionPatch({ toolOverrides: null }),
+      sessionPatch({
+        expectedPermissionMode: "guarded",
+        permissionMode: "workspace",
+        expectedToolOverrides: { webSearch: false },
+        toolOverrides: { skills: { release: false } },
+      }),
     ]);
     expectRejected(validateSessionsPatchParams, [
       sessionPatch({ toolOverrides: { mcpServers: { docs: "no" } } }),
       sessionPatch({ toolOverrides: { mcpToolsDeny: { github: [1] } } }),
       sessionPatch({ toolOverrides: { unknown: true } }),
+      sessionPatch({ expectedToolOverrides: { unknown: true }, toolOverrides: null }),
     ]);
   });
 

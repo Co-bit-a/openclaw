@@ -1,5 +1,6 @@
 // Session patch applier for gateway session metadata and model/runtime overrides.
 import { randomUUID } from "node:crypto";
+import { stableStringify } from "@openclaw/normalization-core";
 import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
@@ -136,8 +137,11 @@ function normalizeExecAsk(raw: string): "off" | "on-miss" | "always" | undefined
 }
 
 function normalizeSessionToolOverrides(
-  raw: SessionToolOverrides,
+  raw: SessionToolOverrides | null | undefined,
 ): SessionToolOverrides | undefined {
+  if (!raw) {
+    return undefined;
+  }
   const normalizeBooleanMap = (value: Record<string, boolean> | undefined) => {
     const entries = Object.entries(value ?? {}).toSorted(([left], [right]) =>
       left.localeCompare(right),
@@ -165,6 +169,17 @@ function normalizeSessionToolOverrides(
     ...(raw.webSearch === false ? { webSearch: false } : {}),
   };
   return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+/** Compare sparse tool policy overlays by their canonical stored meaning. */
+export function sessionToolOverridesEqual(
+  left: SessionToolOverrides | null | undefined,
+  right: SessionToolOverrides | null | undefined,
+): boolean {
+  return (
+    stableStringify(normalizeSessionToolOverrides(left)) ===
+    stableStringify(normalizeSessionToolOverrides(right))
+  );
 }
 
 /** Project a validated gateway session patch for one session entry. */

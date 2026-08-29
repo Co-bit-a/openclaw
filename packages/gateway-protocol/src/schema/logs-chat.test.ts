@@ -103,4 +103,14 @@ describe("ChatSendParamsSchema", () => {
     ).toBe(true);
     expect(Value.Check(ChatSendParamsSchema, { ...send, unknown: true })).toBe(false);
   });
+
+  it("accepts session settings expectations", () => {
+    expect(
+      Value.Check(ChatSendParamsSchema, {
+        ...send,
+        expectedPermissionMode: "guarded",
+        expectedToolOverrides: { webSearch: false },
+      }),
+    ).toBe(true);
+  });
 });

@@ -27,6 +27,7 @@ import { registerChatAbortController, resolveChatRunExpiresAtMs } from "../chat-
 import { authorizeGatewaySessionCreation, resolveCreatorSandbox } from "../operator-role-policy.js";
 import { PENDING_CHAT_SEND_DEDUPE_PREFIX, type DedupeEntry } from "../server-shared.js";
 import { loadSessionEntry } from "../session-utils.js";
+import { sessionToolOverridesEqual } from "../sessions-patch.js";
 import { formatForLog } from "../ws-log.js";
 import {
   buildAbortedChatSendPayload,
@@ -50,6 +51,8 @@ import type { PreparedChatSendSession } from "./chat-send-session.js";
 import { normalizeOptionalChatText, normalizeUnknownChatText } from "./chat-text-normalization.js";
 import { resolveOperatorSessionCreation } from "./session-creation-provenance.js";
 import type { GatewayRequestHandlerOptions } from "./types.js";
+
+const SESSION_SETTINGS_CHANGED_ERROR_REASON = "session-settings-changed";
 
 /** Reserve the session lifecycle and register the abortable run before attachment work. */
 export async function admitChatSend(params: {
@@ -235,6 +238,14 @@ export async function admitChatSend(params: {
       throw new Error(SESSION_ROUTING_CHANGED_ERROR_REASON);
     }
     const latestEntry = latestSession.entry;
+    const settingsChanged =
+      (p.expectedPermissionMode !== undefined &&
+        (latestEntry?.permissionMode ?? null) !== p.expectedPermissionMode) ||
+      (p.expectedToolOverrides !== undefined &&
+        !sessionToolOverridesEqual(latestEntry?.toolOverrides, p.expectedToolOverrides));
+    if (settingsChanged) {
+      throw new Error(SESSION_SETTINGS_CHANGED_ERROR_REASON);
+    }
     if (
       request.goalOperation &&
       (isCompetingSessionWorkAdmissionActive(storePath, [sessionKey, backingSessionId]) ||
@@ -434,6 +445,16 @@ export async function admitChatSend(params: {
     }
     if (err instanceof Error && err.message === ACTIVE_LEAF_CHANGED_ERROR_REASON) {
       respondChatActiveLeafChanged(respond);
+      return { ok: false as const };
+    }
+    if (err instanceof Error && err.message === SESSION_SETTINGS_CHANGED_ERROR_REASON) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "Session settings changed before send. Retry.", {
+          details: { reason: SESSION_SETTINGS_CHANGED_ERROR_REASON },
+        }),
+      );
       return { ok: false as const };
     }
     respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, formatForLog(err)));
