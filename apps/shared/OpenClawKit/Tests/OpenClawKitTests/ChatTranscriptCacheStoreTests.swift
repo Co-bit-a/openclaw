@@ -1188,7 +1188,7 @@ final class ChatCommandOutboxStoreTests: ClientDatabaseTestSuite, @unchecked Sen
             $0.id == "pre-v7-preserved"
         }))
         #expect(preserved.text == "preserve across upgrade")
-        #expect(preserved.expectedSessionSettings == nil)
+        #expect(preserved.sendContext?.expectedSessionSettings == nil)
         let expectation = OpenClawChatSessionSettingsExpectation(
             permissionMode: .readOnly,
             toolOverrides: OpenClawChatSessionToolOverrides(webSearch: false))

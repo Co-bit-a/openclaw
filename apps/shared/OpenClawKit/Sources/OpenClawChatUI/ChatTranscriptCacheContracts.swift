@@ -14,6 +14,7 @@ extension OpenClawChatSQLiteTranscriptCache {
     public static let outboxClientUpgradeRequiredError = "client_upgrade_required"
     public static let outboxSettingsUpgradeRequiredError = "settings_client_upgrade_required"
     public static let outboxSettingsGatewayUpgradeRequiredError = "settings_gateway_upgrade_required"
+    public static let outboxStructuredGatewayUpgradeRequiredError = "structured_gateway_upgrade_required"
     public static let outboxSettingsReviewRequiredError = "settings_review_required"
     public static let outboxSettingsChangedError = "settings_changed"
 
@@ -24,6 +25,8 @@ extension OpenClawChatSQLiteTranscriptCache {
             return String(localized: "A previous app version could not safely send this message. Review and retry it.")
         case self.outboxSettingsGatewayUpgradeRequiredError:
             return String(localized: "Update the gateway before sending queued messages with session settings.")
+        case self.outboxStructuredGatewayUpgradeRequiredError:
+            return String(localized: "Update the gateway before sending queued messages with structured context.")
         case self.outboxSettingsReviewRequiredError:
             return String(localized: "Session settings were not captured. Review and retry this message.")
         case self.outboxSettingsChangedError:

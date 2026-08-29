@@ -982,11 +982,25 @@ struct ChatViewModelOutboxTests {
         try await waitUntil("structured replay becomes terminal") {
             let command = await store.loadCommands().first
             return command?.status == .failed &&
-                command?.lastError == OpenClawChatSQLiteTranscriptCache.outboxClientUpgradeRequiredError
+                command?.lastError == OpenClawChatSQLiteTranscriptCache.outboxStructuredGatewayUpgradeRequiredError
         }
         #expect(await MainActor.run { vm.healthOK })
         #expect(await transport.state.sentMessages.isEmpty)
         #expect(await store.loadCommands().first?.retryCount == 0)
+        let state = try #require(await MainActor.run {
+            vm.messages.lazy.compactMap { vm.outboxState(for: $0.id) }.first
+        })
+        #expect(state == .failed(
+            reason: OpenClawChatSQLiteTranscriptCache.outboxStructuredGatewayUpgradeRequiredError))
+        #expect(!state.allowsRetry)
+        #expect(String(localized: state.statusTitle) == "Update Gateway")
+        #expect(String(localized: state.statusAccessibilityText) ==
+            "Update OpenClaw on the Gateway host, then touch and hold to copy this message and send it again")
+
+        let oldClientState = OpenClawChatOutboxMessageState.failed(
+            reason: OpenClawChatSQLiteTranscriptCache.outboxClientUpgradeRequiredError)
+        #expect(String(localized: oldClientState.statusAccessibilityText) ==
+            "Update OpenClaw, then touch and hold to copy this message and send it again")
         await MainActor.run { vm.flushOutboxIfNeeded() }
         try await Task.sleep(for: .milliseconds(25))
         #expect(await store.loadCommands().first?.status == .failed)
