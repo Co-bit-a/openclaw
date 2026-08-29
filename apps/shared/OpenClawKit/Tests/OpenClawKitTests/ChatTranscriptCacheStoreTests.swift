@@ -1165,7 +1165,7 @@ final class ChatCommandOutboxStoreTests: ClientDatabaseTestSuite, @unchecked Sen
         let reopenedStore = reopened.store(gatewayID: "gw-a")
         let failed = try #require(await reopenedStore.loadCommands().first)
         #expect(failed.status == .failed)
-        #expect(failed.lastError == OpenClawChatSQLiteTranscriptCache.outboxClientUpgradeRequiredError)
+        #expect(failed.lastError == OpenClawChatSQLiteTranscriptCache.outboxSettingsUpgradeRequiredError)
         #expect(failed.expectedSessionSettings == expectation)
         #expect(await reopenedStore.markCommandRetriedIfPresent(
             id: failed.id,

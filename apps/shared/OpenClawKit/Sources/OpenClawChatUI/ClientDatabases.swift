@@ -585,7 +585,7 @@ extension OpenClawClientDatabases {
                     COALESCE(OLD.settings_retry_authorization, 0)
             BEGIN
                 UPDATE outbox_commands
-                SET status = 'failed', last_error = 'client_upgrade_required'
+                SET status = 'failed', last_error = 'settings_client_upgrade_required'
                 WHERE gateway_id = OLD.gateway_id AND client_uuid = OLD.client_uuid
                     AND status = 'queued';
                 SELECT RAISE(IGNORE);

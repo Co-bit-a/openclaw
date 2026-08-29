@@ -97,10 +97,13 @@ public actor OpenClawChatSQLiteTranscriptCache: OpenClawChatTranscriptCache,
     public static let outboxUnknownTargetError = "delivery_target_unknown"
     public static let outboxChangedTargetError = "delivery_target_changed"
     public static let outboxClientUpgradeRequiredError = "client_upgrade_required"
+    public static let outboxSettingsUpgradeRequiredError = "settings_client_upgrade_required"
 
     static func outboxDisplayError(_ lastError: String?) -> String? {
         guard let lastError else { return nil }
-        if lastError == self.outboxClientUpgradeRequiredError {
+        if lastError == self.outboxClientUpgradeRequiredError ||
+            lastError == self.outboxSettingsUpgradeRequiredError
+        {
             return "A previous app version could not safely send this message. Review and retry it."
         }
         guard
