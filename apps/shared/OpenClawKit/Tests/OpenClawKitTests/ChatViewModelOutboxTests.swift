@@ -672,6 +672,32 @@ private actor ScriptedOutbox: OpenClawChatCommandOutbox {
             lastError: lastError)
     }
 
+    func parkQueuedCommands(
+        in scope: OpenClawChatOutboxScope,
+        lastError: String) async -> Bool
+    {
+        await self.base.parkQueuedCommands(in: scope, lastError: lastError)
+    }
+
+    func markCommandRetriedIfPresent(
+        id: String,
+        expectation: OpenClawChatOutboxRetryExpectation,
+        agentID: String?,
+        deliverySessionKey: String,
+        routingContract: String,
+        expectedSessionSettings: OpenClawChatSessionSettingsExpectation,
+        replacementID: String?) async -> OpenClawChatOutboxUpdateResult
+    {
+        await self.base.markCommandRetriedIfPresent(
+            id: id,
+            expectation: expectation,
+            agentID: agentID,
+            deliverySessionKey: deliverySessionKey,
+            routingContract: routingContract,
+            expectedSessionSettings: expectedSessionSettings,
+            replacementID: replacementID)
+    }
+
     func cancelCommand(id: String) async -> OpenClawChatOutboxUpdateResult {
         let result = await base.cancelCommand(id: id)
         if self.forwarding == .holdingCancellation {
@@ -759,6 +785,9 @@ struct ChatViewModelOutboxTests {
         #expect(commands.map(\.status) == [.queued])
         #expect(commands.map(\.sessionKey) == ["main"])
         #expect(commands.map(\.deliverySessionKey) == ["agent:main:main"])
+        #expect(commands.map(\.expectedSessionSettings) == [
+            OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil),
+        ])
 
         // The visible row carries the queued state and the draft was cleared.
         #expect(await MainActor.run { vm.input.isEmpty })
@@ -1735,6 +1764,8 @@ struct ChatViewModelOutboxTests {
         #expect(preserved.lastError == OpenClawChatSQLiteTranscriptCache.outboxUnconfirmedError)
         #expect(preserved.retryCount == 0)
         #expect(preserved.text == "stale health send")
+        #expect(preserved.expectedSessionSettings ==
+            OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil))
         #expect(await userTexts(vm) == ["stale health send"])
         let bubbleKey = await MainActor.run {
             vm.messages.first { $0.role == "user" }?.idempotencyKey
@@ -1759,6 +1790,9 @@ struct ChatViewModelOutboxTests {
             await store.loadCommands().isEmpty
         }
         #expect(await transport.state.sentIdempotencyKeys == [preserved.id])
+        #expect(await transport.state.sentSessionSettings == [
+            OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil),
+        ])
     }
 
     @Test func `lost queued send ack reconciles history without replay`() async throws {

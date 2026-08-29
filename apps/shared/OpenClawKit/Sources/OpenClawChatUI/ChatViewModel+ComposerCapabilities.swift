@@ -97,6 +97,13 @@ extension OpenClawChatViewModel {
             toolOverrides: entry.toolOverrides)
     }
 
+    func durableSessionSettingsExpectation() -> OpenClawChatSessionSettingsExpectation {
+        let entry = self.currentSessionEntry()
+        return OpenClawChatSessionSettingsExpectation(
+            permissionMode: entry?.permissionMode,
+            toolOverrides: entry?.toolOverrides)
+    }
+
     func waitForCapabilitySettingsBarrier(
         in sessionKey: String,
         canonicalSessionKey: String? = nil,
@@ -222,7 +229,8 @@ extension OpenClawChatViewModel {
     }
 
     var composerToolOverrides: OpenClawChatSessionToolOverrides {
-        self.currentSessionEntry()?.toolOverrides ?? OpenClawChatSessionToolOverrides()
+        self.confirmedCapabilityToolOverridesByTarget[self.currentModelPatchTarget()]?.overrides ??
+            self.currentSessionEntry()?.toolOverrides ?? OpenClawChatSessionToolOverrides()
     }
 
     var composerWebSearchEnabled: Bool {
@@ -244,8 +252,8 @@ extension OpenClawChatViewModel {
             .first(where: { $0.name == server })?.tools
             .first(where: { $0.name == tool })
         guard let catalogTool, catalogTool.baseEnabled else { return false }
-        if self.hasAppliedLiveSessions {
-            return self.currentSessionEntry()?.toolOverrides?.mcpToolsDeny[server]?.contains(tool) != true
+        if let confirmed = self.confirmedCapabilityToolOverridesByTarget[self.currentModelPatchTarget()] {
+            return confirmed.overrides?.mcpToolsDeny[server]?.contains(tool) != true
         }
         return !catalogTool.sessionDenied
     }
@@ -289,6 +297,7 @@ extension OpenClawChatViewModel {
     func invalidateComposerCapabilities() {
         self.capabilityPatchFailureRevisionsByTarget.removeAll()
         self.capabilityPatchFailureMessagesByTarget.removeAll()
+        self.confirmedCapabilityToolOverridesByTarget.removeAll()
         self.composerCapabilityState.loadGeneration &+= 1
         self.composerCapabilityState.mutationGeneration &+= 1
         self.composerCapabilityState.ownerID = ""
@@ -361,9 +370,13 @@ extension OpenClawChatViewModel {
         else { return }
         var next = self.composerToolOverrides
         let connector = self.composerCapabilityCatalog.connectors.first { $0.name == server }
-        let effectiveDenied = self.hasAppliedLiveSessions
-            ? []
-            : connector?.tools.filter(\.sessionDenied).map(\.name) ?? []
+        let effectiveDenied = if let confirmed = self
+            .confirmedCapabilityToolOverridesByTarget[self.currentModelPatchTarget()]
+        {
+            confirmed.overrides?.mcpToolsDeny[server] ?? []
+        } else {
+            connector?.tools.filter(\.sessionDenied).map(\.name) ?? []
+        }
         var denied = Set(next.mcpToolsDeny[server] ?? effectiveDenied)
         if denied.contains(tool) {
             denied.remove(tool)
@@ -463,7 +476,10 @@ extension OpenClawChatViewModel {
                     self.sessions[index].permissionMode = result?.permissionMode ?? permissionMode
                 }
                 if let toolOverrides {
-                    self.sessions[index].toolOverrides = result?.toolOverrides ?? toolOverrides
+                    let accepted = result?.toolOverrides ?? toolOverrides
+                    self.sessions[index].toolOverrides = accepted
+                    self.confirmedCapabilityToolOverridesByTarget[target] = accepted
+                        .map(ToolOverridesState.value) ?? ToolOverridesState.none
                 }
                 if toolOverrides != nil {
                     await self.loadComposerCapabilities(force: true)
@@ -482,11 +498,21 @@ extension OpenClawChatViewModel {
                       target == self.currentModelPatchTarget(),
                       self.sessionKey == originalSessionKey
                 else { return }
-                self.capabilityPatchFailureRevisionsByTarget[target, default: 0] &+= 1
-                self.capabilityPatchFailureMessagesByTarget[target] = error.localizedDescription
-                self.composerCapabilityState.errorMessage = error.localizedDescription
-                self.errorText = error.localizedDescription
+                await self.recordCapabilityPatchFailure(error, target: target)
             }
         }
+    }
+
+    func recordCapabilityPatchFailure(_ error: Error, target: ModelPatchTarget) async {
+        self.capabilityPatchFailureRevisionsByTarget[target, default: 0] &+= 1
+        self.capabilityPatchFailureMessagesByTarget[target] = error.localizedDescription
+        if let outbox = self.outbox,
+           target == self.currentModelPatchTarget(),
+           let scope = self.outboxBranchScope(for: self.currentSessionSnapshot())
+        {
+            _ = await outbox.parkQueuedCommands(in: scope, lastError: error.localizedDescription)
+        }
+        self.composerCapabilityState.errorMessage = error.localizedDescription
+        self.errorText = error.localizedDescription
     }
 }

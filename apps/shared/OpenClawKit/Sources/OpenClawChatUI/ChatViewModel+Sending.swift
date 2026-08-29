@@ -347,6 +347,8 @@ extension OpenClawChatViewModel {
         let draft: SendDraft
         let runId: String
         let storedThinkingLevel: String
+        let sendSessionSettingsExpectation: OpenClawChatSessionSettingsExpectation?
+        let durableSessionSettingsExpectation: OpenClawChatSessionSettingsExpectation
         let encodedAttachments: [OpenClawChatAttachmentPayload]
         let userMessageTimestamp: Double
         let userMessageID: UUID
@@ -585,6 +587,8 @@ extension OpenClawChatViewModel {
             draft: draft,
             runId: runId,
             storedThinkingLevel: storedThinkingLevel,
+            sendSessionSettingsExpectation: self.composerSessionSettingsExpectation(),
+            durableSessionSettingsExpectation: self.durableSessionSettingsExpectation(),
             encodedAttachments: encodedAttachments,
             userMessageTimestamp: userMessageTimestamp,
             userMessageID: userMessageID)
@@ -649,7 +653,7 @@ extension OpenClawChatViewModel {
                 target: OpenClawChatSendTarget(
                     agentID: attempt.draft.session.deliveryAgentID,
                     expectedSessionRoutingContract: attempt.draft.session.sessionRoutingContract,
-                    expectedSessionSettings: self.composerSessionSettingsExpectation()),
+                    expectedSessionSettings: attempt.sendSessionSettingsExpectation),
                 message: attempt.draft.outgoingMessageText,
                 thinking: thinkingLevel,
                 idempotencyKey: attempt.runId,
@@ -756,6 +760,7 @@ extension OpenClawChatViewModel {
                 thinking: effectiveThinkingLevelForSend(attempt.storedThinkingLevel),
                 messageID: attempt.userMessageID,
                 session: attempt.draft.session,
+                expectedSessionSettings: attempt.durableSessionSettingsExpectation,
                 deliveryIsAmbiguous: deliveryIsAmbiguous)
             if preserved {
                 self.finishAcceptedComposerSend(attempt.draft)

@@ -302,6 +302,7 @@ public final class OpenClawChatViewModel {
     var inFlightSettingsPatchCountsByTarget: [ModelPatchTarget: Int] = [:]
     var capabilityPatchFailureRevisionsByTarget: [ModelPatchTarget: UInt64] = [:]
     var capabilityPatchFailureMessagesByTarget: [ModelPatchTarget: String] = [:]
+    var confirmedCapabilityToolOverridesByTarget: [ModelPatchTarget: ToolOverridesState] = [:]
     private var settingsPatchRevisionsByTarget: [ModelPatchTarget: UInt64] = [:]
     private var settingsPatchWaitersByTarget: [ModelPatchTarget: [CheckedContinuation<Void, Never>]] = [:]
     @ObservationIgnored
@@ -368,6 +369,16 @@ public final class OpenClawChatViewModel {
 
         var level: String? {
             if case let .value(level) = self { return level }
+            return nil
+        }
+    }
+
+    enum ToolOverridesState {
+        case none
+        case value(OpenClawChatSessionToolOverrides)
+
+        var overrides: OpenClawChatSessionToolOverrides? {
+            if case let .value(overrides) = self { return overrides }
             return nil
         }
     }

@@ -325,7 +325,12 @@ public protocol OpenClawChatCommandOutbox: Sendable {
         agentID: String?,
         deliverySessionKey: String,
         routingContract: String,
+        expectedSessionSettings: OpenClawChatSessionSettingsExpectation,
         replacementID: String?) async -> OpenClawChatOutboxUpdateResult
+    /// Persistently parks automatic replay after a failed settings mutation.
+    func parkQueuedCommands(
+        in scope: OpenClawChatOutboxScope,
+        lastError: String) async -> Bool
     /// User cancellation succeeds only before a sender claims the row. The
     /// status predicate is the cross-view-model cancellation boundary.
     func cancelCommand(id: String) async -> OpenClawChatOutboxUpdateResult
@@ -337,6 +342,13 @@ public protocol OpenClawChatCommandOutbox: Sendable {
 }
 
 extension OpenClawChatCommandOutbox {
+    public func parkQueuedCommands(
+        in _: OpenClawChatOutboxScope,
+        lastError _: String) async -> Bool
+    {
+        false
+    }
+
     public func markCommandQueued(
         id _: String,
         attemptVersion _: Int,
@@ -419,6 +431,7 @@ extension OpenClawChatCommandOutbox {
         agentID _: String?,
         deliverySessionKey _: String,
         routingContract _: String,
+        expectedSessionSettings _: OpenClawChatSessionSettingsExpectation,
         replacementID _: String? = nil) async -> OpenClawChatOutboxUpdateResult
     {
         .unavailable

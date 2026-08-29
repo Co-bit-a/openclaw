@@ -56,6 +56,15 @@ struct ChatViewModelOutboxSettingsTests {
         #expect(await transport.state.sentMessages.isEmpty)
         #expect(await store.loadCommands().first?.lastError ==
             "Session settings were not captured; review and retry this message.")
+
+        let messageID = try #require(await MainActor.run { vm.messages.last?.id })
+        await MainActor.run { vm.retryOutboxMessage(messageID) }
+        try await waitUntil("reviewed settings rebound and sent") {
+            await transport.state.sentMessages == ["review before replay"]
+        }
+        #expect(await transport.state.sentSessionSettings == [
+            OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil),
+        ])
     }
 
     @Test func `failed restrictive patch cannot release a later automatic flush`() async throws {
@@ -89,25 +98,30 @@ struct ChatViewModelOutboxSettingsTests {
                 await patchStarted.open()
                 await patchRelease.wait()
                 guard let vm else { return }
-                vm.capabilityPatchFailureRevisionsByTarget[target, default: 0] &+= 1
-                vm.capabilityPatchFailureMessagesByTarget[target] = "Restriction was not saved."
+                await vm.recordCapabilityPatchFailure(
+                    NSError(
+                        domain: "ChatViewModelOutboxSettingsTests",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "Restriction was not saved."]),
+                    target: target)
             }
-            vm.readySessionMetadataGeneration = vm.sessionMetadataGeneration
-            vm.reconciledOutboxBranchScopes.insert(OpenClawChatOutboxScope(sessionKey: "main", agentID: "main"))
-            vm.applyTransportHealth(true)
-            vm.flushOutboxIfNeeded()
         }
         await patchStarted.wait()
-        try await waitUntil("flush waits behind restriction") {
-            await store.loadCommands().first?.status == .sending
-        }
         #expect(await transport.state.sentMessages.isEmpty)
         await patchRelease.open()
-        try await waitUntil("dependent row parked") {
+        try await waitUntil("queued row parked before flush") {
             await store.loadCommands().first?.status == .failed
         }
 
-        await MainActor.run { vm.flushOutboxIfNeeded() }
+        let reopened = await makeOutboxViewModel(transport: transport, outbox: store)
+        await MainActor.run {
+            reopened.load()
+            reopened.readySessionMetadataGeneration = reopened.sessionMetadataGeneration
+            reopened.reconciledOutboxBranchScopes.insert(
+                OpenClawChatOutboxScope(sessionKey: "main", agentID: "main"))
+            reopened.applyTransportHealth(true)
+            reopened.flushOutboxIfNeeded()
+        }
         try await Task.sleep(for: .milliseconds(50))
         #expect(await transport.state.sentMessages.isEmpty)
         #expect(await store.loadCommands().first?.lastError == "Restriction was not saved.")

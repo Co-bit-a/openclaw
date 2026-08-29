@@ -1135,6 +1135,37 @@ final class ChatCommandOutboxStoreTests: ClientDatabaseTestSuite, @unchecked Sen
         #expect(await reopened.store(gatewayID: "gw-a").loadCommands().first?.expectedSessionSettings == expectation)
     }
 
+    @Test func `legacy writer round trip preserves an unknown settings column`() async throws {
+        let expectation = OpenClawChatSessionSettingsExpectation(
+            permissionMode: .readOnly,
+            toolOverrides: OpenClawChatSessionToolOverrides(webSearch: false))
+        #expect(await store.enqueueCommand(OpenClawChatOutboxCommand(
+            id: "legacy-writer-settings",
+            sessionKey: "main",
+            deliverySessionKey: "agent:main:main",
+            routingContract: "per-sender|main|main",
+            agentID: "main",
+            text: "preserve authority",
+            thinking: "off",
+            expectedSessionSettings: expectation,
+            createdAt: Date().timeIntervalSince1970,
+            status: .queued,
+            retryCount: 0,
+            lastError: nil)))
+        try databases.close()
+        try withRawDatabase(at: directory.appendingPathComponent("client-state.sqlite")) { raw in
+            execute(raw, """
+            UPDATE outbox_commands
+            SET status = 'failed', last_error = 'legacy retry';
+            UPDATE outbox_commands
+            SET status = 'queued', last_error = '', retry_count = 0;
+            """)
+        }
+
+        let reopened = try OpenClawClientDatabases(directoryURL: directory)
+        #expect(await reopened.store(gatewayID: "gw-a").loadCommands().first?.expectedSessionSettings == expectation)
+    }
+
     @Test func `nil agent rows use the canonical empty scope owner`() async throws {
         let scope = OpenClawChatOutboxScope(sessionKey: "main", agentID: nil)
         #expect(await store.updateLastActiveLeafEntryID("leaf-a", expectedEpoch: 0, for: scope))
@@ -1160,6 +1191,7 @@ final class ChatCommandOutboxStoreTests: ClientDatabaseTestSuite, @unchecked Sen
             id: parkedSending.id,
             expectation: retryExpectation(parkedSending),
             agentID: "main", deliverySessionKey: "sending", routingContract: "per-sender|sending|main",
+            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil),
             replacementID: "sending-retry") == .updated)
         let retriedSending = try #require(await store.loadCommands().first(where: { $0.id == "sending-retry" }))
         #expect(retriedSending.attemptVersion == 1)
@@ -1174,6 +1206,7 @@ final class ChatCommandOutboxStoreTests: ClientDatabaseTestSuite, @unchecked Sen
             id: parkedQueued.id,
             expectation: retryExpectation(parkedQueued),
             agentID: "main", deliverySessionKey: "queued", routingContract: "per-sender|queued|main",
+            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil),
             replacementID: "unused") == .updated)
         #expect(await store.loadCommands().contains(where: { $0.id == "queued" && $0.attemptVersion == 2 }))
 
@@ -1199,6 +1232,7 @@ final class ChatCommandOutboxStoreTests: ClientDatabaseTestSuite, @unchecked Sen
             id: parkedRequeued.id,
             expectation: retryExpectation(parkedRequeued),
             agentID: "main", deliverySessionKey: "requeued", routingContract: "per-sender|requeued|main",
+            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil),
             replacementID: "requeued-retry") == .updated)
         #expect(await stickyFixture.store.loadCommands()
             .contains(where: { $0.id == "requeued-retry" && $0.attemptVersion == 1 }))
@@ -1228,6 +1262,7 @@ final class ChatCommandOutboxStoreTests: ClientDatabaseTestSuite, @unchecked Sen
             agentID: "main",
             deliverySessionKey: "main",
             routingContract: "per-sender|main|main",
+            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil),
             replacementID: "attached-retry") == .updated)
         let retried = try #require(await store.loadCommands().first)
         #expect(retried.id == "attached-retry")
@@ -1277,6 +1312,7 @@ final class ChatCommandOutboxStoreTests: ClientDatabaseTestSuite, @unchecked Sen
             id: parked.id,
             expectation: retryExpectation(parked),
             agentID: "main", deliverySessionKey: "main", routingContract: "per-sender|main|main",
+            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil),
             replacementID: "failed-retry") == .updated)
         #expect(await store.loadCommands().first?.id == "failed-retry")
     }
@@ -1409,6 +1445,7 @@ final class ChatCommandOutboxStoreTests: ClientDatabaseTestSuite, @unchecked Sen
             agentID: "Agent-B",
             deliverySessionKey: "agent:agent-b:main",
             routingContract: "per-sender|main|agent-b",
+            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil),
             replacementID: nil) == .updated)
         let command = try #require(await store.loadCommands().first)
         #expect(command.status == .queued)

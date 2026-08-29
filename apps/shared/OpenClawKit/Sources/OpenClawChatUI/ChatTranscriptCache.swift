@@ -743,6 +743,7 @@ extension OpenClawChatSQLiteTranscriptCache {
         agentID: String?,
         deliverySessionKey: String,
         routingContract: String,
+        expectedSessionSettings: OpenClawChatSessionSettingsExpectation,
         replacementID: String?) async -> OpenClawChatOutboxUpdateResult
     {
         guard !self.isRetired else { return .unavailable }
@@ -796,7 +797,8 @@ extension OpenClawChatSQLiteTranscriptCache {
                         attempt_version = ?,
                         branch_epoch = ?, parked_was_accepted = 0, had_unacknowledged_send = 0,
                         retry_count = 0, last_error = '', created_at = ?,
-                        agent_id = ?, delivery_session_key = ?, routing_contract = ?
+                        agent_id = ?, delivery_session_key = ?, routing_contract = ?,
+                        expected_settings_json = ?
                     WHERE gateway_id = ? AND client_uuid = ? AND status = 'failed'
                       AND attempt_version = ? AND retry_count = ? AND last_error = ?
                     """,
@@ -808,6 +810,7 @@ extension OpenClawChatSQLiteTranscriptCache {
                         normalizedAgentID,
                         normalizedDeliverySessionKey,
                         normalizedRoutingContract,
+                        Self.encodeSessionSettingsExpectation(expectedSessionSettings),
                         gatewayID,
                         id,
                         expectation.attemptVersion,
@@ -818,6 +821,35 @@ extension OpenClawChatSQLiteTranscriptCache {
             }
         } catch {
             return .unavailable
+        }
+    }
+
+    public func parkQueuedCommands(
+        in scope: OpenClawChatOutboxScope,
+        lastError: String) async -> Bool
+    {
+        guard !self.isRetired else { return false }
+        let gatewayID = self.gatewayID
+        do {
+            return try await self.databases.stateQueue.write { db in
+                try db.execute(
+                    sql: """
+                    UPDATE outbox_commands
+                    SET status = 'failed', last_error = ?
+                    WHERE gateway_id = ? AND session_key = ? AND agent_id = ?
+                      AND status = 'queued'
+                    """,
+                    arguments: [
+                        lastError,
+                        gatewayID,
+                        scope.sessionKey,
+                        Self.normalizedAgentID(scope.agentID),
+                    ])
+                return true
+            }
+        } catch {
+            cacheLogger.error("outbox settings-failure park failed: \(error.localizedDescription, privacy: .public)")
+            return false
         }
     }
 
