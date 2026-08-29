@@ -567,6 +567,15 @@ extension OpenClawClientDatabases {
             ALTER TABLE outbox_attachments_v6 RENAME TO outbox_attachments;
             """)
         }
+        self.registerOutboxSettingsMigrations(&migrator)
+        self.registerOutboxSendContextMigration(&migrator)
+        self.registerOutboxStructuredClaimMigration(&migrator)
+        self.registerOutboxTerminalClaimMigration(&migrator)
+        try migrator.migrate(queue)
+        return queue
+    }
+
+    private static func registerOutboxSettingsMigrations(_ migrator: inout DatabaseMigrator) {
         // A queued command owns the authority it was captured under. Legacy
         // rows remain NULL so CAS-capable replay can park them for review.
         migrator.registerMigration("client-state-outbox-settings-expectation-v7") { db in
@@ -601,11 +610,6 @@ extension OpenClawClientDatabases {
             END;
             """)
         }
-        self.registerOutboxSendContextMigration(&migrator)
-        self.registerOutboxStructuredClaimMigration(&migrator)
-        self.registerOutboxTerminalClaimMigration(&migrator)
-        try migrator.migrate(queue)
-        return queue
     }
 
     private static func registerOutboxSendContextMigration(_ migrator: inout DatabaseMigrator) {
