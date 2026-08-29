@@ -587,6 +587,7 @@ describe("runEmbeddedAttemptSettledPhase", () => {
       fixture.order.push("result");
       return {
         ...fixture.result,
+        terminal: { kind: "ok" },
         yieldDetected: true,
         acceptedSessionSpawns: [
           { runId: "child-run", childSessionKey: "agent:main:subagent:child" },
@@ -724,6 +725,7 @@ describe("runEmbeddedAttemptSettledPhase", () => {
     const failure = new Error("sqlite unavailable");
     mocks.completeResult.mockReturnValueOnce({
       ...fixture.result,
+      terminal: { kind: "ok" },
       yieldDetected: true,
       acceptedSessionSpawns: [{ runId: "child-run", childSessionKey: "agent:main:subagent:child" }],
     });

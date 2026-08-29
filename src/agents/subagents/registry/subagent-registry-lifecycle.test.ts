@@ -4969,13 +4969,26 @@ describe("requester settle wake trigger", () => {
     });
 
     await completeRun(controller, entry, { triggerCleanup: true });
-    await waitForLifecycleState(() => expect(settleWake).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
 
-    // The no-wake decision completed, but the spawning turn can still yield.
+    // The child cannot wake its requester while that exact requester turn owns it.
     expect(entry.completion?.resultText).toBe("delete-mode findings");
     expect(runs.has(entry.runId)).toBe(true);
-    expect(entry.requesterSettleWake).toBeUndefined();
-    expect(entry.retireAfterRequesterTurn).toBe(true);
+    expect(entry.requesterSettleWake).toMatchObject({
+      status: "pending",
+      retireAfterSettle: true,
+    });
+    expect(entry.retireAfterRequesterTurn).toBeUndefined();
+    expect(settleWake).not.toHaveBeenCalled();
+
+    controller.settleRequesterTurnAfterSessionSpawns({
+      requesterSessionKey: entry.requesterSessionKey,
+      requesterTurnRunId: "run-requester",
+      requesterYielded: false,
+      acceptedSessionSpawns: [{ runId: entry.runId, childSessionKey: entry.childSessionKey }],
+    });
+    await waitForLifecycleState(() => expect(settleWake).toHaveBeenCalledTimes(1));
+
     expect(settleWake).toHaveBeenCalledWith(
       expect.objectContaining({
         settledEntry: expect.objectContaining({
@@ -4984,6 +4997,7 @@ describe("requester settle wake trigger", () => {
         }),
       }),
     );
+    expect(runs.has(entry.runId)).toBe(false);
   });
 
   it("retains a reconciled killed row until the settle wake resolves", () => {
