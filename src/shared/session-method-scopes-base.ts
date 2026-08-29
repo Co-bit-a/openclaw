@@ -20,6 +20,7 @@ const SESSIONS_PATCH_WRITE_SCOPE_ENVELOPE_FIELDS: ReadonlySet<string> = new Set(
   "agentId",
   "expectedSessionId",
   "expectedLifecycleRevision",
+  "expectedPermissionMode",
   "expectedMarkedUnreadAt",
 ]);
 
