@@ -35,7 +35,9 @@ func outboxTestCommand(
     text: String,
     createdAt: Double,
     sessionKey: String = "main",
-    expectedSessionSettings: OpenClawChatSessionSettingsExpectation? = nil) -> OpenClawChatOutboxCommand
+    expectedSessionSettings: OpenClawChatSessionSettingsExpectation? = OpenClawChatSessionSettingsExpectation(
+        permissionMode: nil,
+        toolOverrides: nil)) -> OpenClawChatOutboxCommand
 {
     OpenClawChatOutboxCommand(
         id: id,
@@ -172,7 +174,7 @@ final class OutboxTestTransport: @unchecked Sendable, OpenClawChatTransport {
         sessions: [OpenClawChatSessionEntry] = [],
         supportsSlashCommands: Bool = false,
         requiresRoutingContract: Bool = true,
-        supportsSessionSettingsCAS: Bool = false,
+        supportsSessionSettingsCAS: Bool = true,
         routeUnavailableReason: String? = nil)
     {
         self.state = OutboxTransportState(healthy: healthy, sendFails: sendFails)
@@ -1116,6 +1118,7 @@ struct ChatViewModelOutboxTests {
             agentID: "alpha",
             text: "use canonical Luna metadata",
             thinking: "ultra",
+            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil),
             createdAt: Date().timeIntervalSince1970,
             status: .queued,
             retryCount: 0,
@@ -1275,6 +1278,7 @@ struct ChatViewModelOutboxTests {
             agentID: "agent-a",
             text: "review old failure",
             thinking: "off",
+            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil),
             createdAt: Date().timeIntervalSince1970,
             status: .failed,
             retryCount: 1,
@@ -1305,6 +1309,7 @@ struct ChatViewModelOutboxTests {
             sessionKey: "global",
             text: "choose my owner",
             thinking: "off",
+            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil),
             createdAt: Date().timeIntervalSince1970,
             status: .failed,
             retryCount: 0,
@@ -1668,6 +1673,7 @@ struct ChatViewModelOutboxTests {
             routingContract: "per-sender|main|main",
             text: "do not skip me",
             thinking: "off",
+            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil),
             createdAt: Date().timeIntervalSince1970,
             status: .queued,
             retryCount: OpenClawChatViewModel.maxOutboxSendAttempts - 1,
@@ -1828,6 +1834,9 @@ struct ChatViewModelOutboxTests {
                 sessionKey: "main",
                 text: "old message",
                 thinking: "off",
+                expectedSessionSettings: OpenClawChatSessionSettingsExpectation(
+                    permissionMode: nil,
+                    toolOverrides: nil),
                 createdAt: staleCreatedAt,
                 status: .queued,
                 retryCount: 0,
@@ -1874,6 +1883,9 @@ struct ChatViewModelOutboxTests {
                 routingContract: "per-sender|main|main",
                 text: "think hard",
                 thinking: "high",
+                expectedSessionSettings: OpenClawChatSessionSettingsExpectation(
+                    permissionMode: nil,
+                    toolOverrides: nil),
                 createdAt: now,
                 status: .queued,
                 retryCount: 0,
@@ -1885,6 +1897,9 @@ struct ChatViewModelOutboxTests {
                 routingContract: "per-sender|main|main",
                 text: "no thinking",
                 thinking: "medium",
+                expectedSessionSettings: OpenClawChatSessionSettingsExpectation(
+                    permissionMode: nil,
+                    toolOverrides: nil),
                 createdAt: now + 1,
                 status: .queued,
                 retryCount: 0,
@@ -1923,6 +1938,9 @@ struct ChatViewModelOutboxTests {
                 routingContract: "per-sender|main|main",
                 text: "sent from elsewhere",
                 thinking: "off",
+                expectedSessionSettings: OpenClawChatSessionSettingsExpectation(
+                    permissionMode: nil,
+                    toolOverrides: nil),
                 createdAt: Date().timeIntervalSince1970,
                 status: .queued,
                 retryCount: 0,
@@ -1954,6 +1972,7 @@ struct ChatViewModelOutboxTests {
             agentID: "main",
             text: "canonical alias",
             thinking: "off",
+            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil),
             createdAt: Date().timeIntervalSince1970,
             status: .queued,
             retryCount: 0,
@@ -2004,6 +2023,9 @@ struct ChatViewModelOutboxTests {
                     sessionKey: "other",
                     text: "m\(index)",
                     thinking: "off",
+                    expectedSessionSettings: OpenClawChatSessionSettingsExpectation(
+                        permissionMode: nil,
+                        toolOverrides: nil),
                     createdAt: Date().timeIntervalSince1970,
                     status: .queued,
                     retryCount: 0,
@@ -2359,6 +2381,7 @@ extension ChatViewModelOutboxTests {
             routingContract: "per-sender|main|main",
             text: "queued by the previous launch",
             thinking: "off",
+            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil),
             createdAt: Date().timeIntervalSince1970 - 60,
             status: .queued,
             retryCount: 0,
@@ -2405,6 +2428,7 @@ extension ChatViewModelOutboxTests {
             routingContract: "per-sender|main|main",
             text: "backlog in second session",
             thinking: "off",
+            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil),
             createdAt: Date().timeIntervalSince1970 - 60,
             status: .queued,
             retryCount: 0,

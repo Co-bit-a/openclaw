@@ -427,6 +427,7 @@ extension OpenClawChatViewModel {
         }
         let target = self.currentModelPatchTarget()
         let originalSessionKey = self.sessionKey
+        let originalOutboxScope = self.outboxBranchScope(for: self.currentSessionSnapshot())
         let ownerID = self.composerCapabilityOwnerID
         let expectedToolOverrides: OpenClawChatSessionToolOverrides?? = toolOverrides == nil
             ? nil
@@ -498,18 +499,22 @@ extension OpenClawChatViewModel {
                       target == self.currentModelPatchTarget(),
                       self.sessionKey == originalSessionKey
                 else { return }
-                await self.recordCapabilityPatchFailure(error, target: target)
+                await self.recordCapabilityPatchFailure(
+                    error,
+                    target: target,
+                    outboxScope: originalOutboxScope)
             }
         }
     }
 
-    func recordCapabilityPatchFailure(_ error: Error, target: ModelPatchTarget) async {
+    func recordCapabilityPatchFailure(
+        _ error: Error,
+        target: ModelPatchTarget,
+        outboxScope: OpenClawChatOutboxScope?) async
+    {
         self.capabilityPatchFailureRevisionsByTarget[target, default: 0] &+= 1
         self.capabilityPatchFailureMessagesByTarget[target] = error.localizedDescription
-        if let outbox = self.outbox,
-           target == self.currentModelPatchTarget(),
-           let scope = self.outboxBranchScope(for: self.currentSessionSnapshot())
-        {
+        if let outbox = self.outbox, let scope = outboxScope {
             _ = await outbox.parkQueuedCommands(in: scope, lastError: error.localizedDescription)
         }
         self.composerCapabilityState.errorMessage = error.localizedDescription

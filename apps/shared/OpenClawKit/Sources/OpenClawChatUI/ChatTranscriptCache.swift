@@ -96,10 +96,15 @@ public actor OpenClawChatSQLiteTranscriptCache: OpenClawChatTranscriptCache,
     public static let outboxUnconfirmedError = "delivery_unconfirmed"
     public static let outboxUnknownTargetError = "delivery_target_unknown"
     public static let outboxChangedTargetError = "delivery_target_changed"
+    public static let outboxClientUpgradeRequiredError = "client_upgrade_required"
 
     static func outboxDisplayError(_ lastError: String?) -> String? {
-        guard let lastError,
-              let marker = lastError.range(of: "\n# branch-park:")
+        guard let lastError else { return nil }
+        if lastError == self.outboxClientUpgradeRequiredError {
+            return "A previous app version could not safely send this message. Review and retry it."
+        }
+        guard
+            let marker = lastError.range(of: "\n# branch-park:")
         else { return lastError }
         return String(lastError[..<marker.lowerBound])
     }
@@ -678,7 +683,9 @@ extension OpenClawChatSQLiteTranscriptCache {
                 let id: String = row["client_uuid"]
                 try db.execute(
                     sql: """
-                    UPDATE outbox_commands SET status = 'sending'
+                    UPDATE outbox_commands
+                    SET status = 'sending',
+                        settings_retry_authorization = COALESCE(settings_retry_authorization, 0) + 1
                     WHERE gateway_id = ? AND client_uuid = ? AND status = 'queued'
                     """,
                     arguments: [gatewayID, id])
@@ -796,6 +803,7 @@ extension OpenClawChatSQLiteTranscriptCache {
                     SET client_uuid = ?, status = 'queued',
                         attempt_version = ?,
                         branch_epoch = ?, parked_was_accepted = 0, had_unacknowledged_send = 0,
+                        settings_retry_authorization = COALESCE(settings_retry_authorization, 0) + 1,
                         retry_count = 0, last_error = '', created_at = ?,
                         agent_id = ?, delivery_session_key = ?, routing_contract = ?,
                         expected_settings_json = ?
@@ -831,7 +839,7 @@ extension OpenClawChatSQLiteTranscriptCache {
         guard !self.isRetired else { return false }
         let gatewayID = self.gatewayID
         do {
-            return try await self.databases.stateQueue.write { db in
+            let changed = try await self.databases.stateQueue.write { db in
                 try db.execute(
                     sql: """
                     UPDATE outbox_commands
@@ -845,8 +853,12 @@ extension OpenClawChatSQLiteTranscriptCache {
                         scope.sessionKey,
                         Self.normalizedAgentID(scope.agentID),
                     ])
-                return true
+                return db.changesCount > 0
             }
+            if changed {
+                self.outboxChangeHub.yield(.invalidated(gatewayID: gatewayID, scope: scope))
+            }
+            return true
         } catch {
             cacheLogger.error("outbox settings-failure park failed: \(error.localizedDescription, privacy: .public)")
             return false

@@ -574,6 +574,33 @@ extension OpenClawClientDatabases {
             ALTER TABLE outbox_commands ADD COLUMN expected_settings_json TEXT;
             """)
         }
+        migrator.registerMigration("client-state-outbox-settings-claim-v8") { db in
+            try db.execute(sql: """
+            ALTER TABLE outbox_commands ADD COLUMN settings_retry_authorization INTEGER;
+            CREATE TRIGGER outbox_settings_claim_guard
+            BEFORE UPDATE OF status ON outbox_commands
+            WHEN OLD.expected_settings_json IS NOT NULL
+                AND OLD.status = 'queued' AND NEW.status = 'sending'
+                AND COALESCE(NEW.settings_retry_authorization, 0) =
+                    COALESCE(OLD.settings_retry_authorization, 0)
+            BEGIN
+                UPDATE outbox_commands
+                SET status = 'failed', last_error = 'client_upgrade_required'
+                WHERE gateway_id = OLD.gateway_id AND client_uuid = OLD.client_uuid
+                    AND status = 'queued';
+                SELECT RAISE(IGNORE);
+            END;
+            CREATE TRIGGER outbox_settings_retry_guard
+            BEFORE UPDATE OF status ON outbox_commands
+            WHEN OLD.expected_settings_json IS NOT NULL
+                AND OLD.status = 'failed' AND NEW.status = 'queued'
+                AND COALESCE(NEW.settings_retry_authorization, 0) =
+                    COALESCE(OLD.settings_retry_authorization, 0)
+            BEGIN
+                SELECT RAISE(ABORT, 'settings-fenced outbox retry requires current client');
+            END;
+            """)
+        }
         try migrator.migrate(queue)
         return queue
     }

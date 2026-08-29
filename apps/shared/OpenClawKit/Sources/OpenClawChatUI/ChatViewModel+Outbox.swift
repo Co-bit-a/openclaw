@@ -892,6 +892,19 @@ extension OpenClawChatViewModel {
             self.errorText = settingsError
             return .stop
         }
+        if self.transport.outboxRequiresSessionRoutingContract,
+           !routeLease.supportsSessionSettingsCAS
+        {
+            let message = "Update the gateway before sending queued messages with session settings."
+            _ = await outbox.markCommandFailedIfPresent(
+                id: command.id,
+                attemptVersion: command.attemptVersion,
+                retryCount: command.retryCount,
+                lastError: message)
+            self.setOutboxState(.failed(reason: message), forCommandID: command.id)
+            self.errorText = message
+            return .continueFlush
+        }
         if routeLease.supportsSessionSettingsCAS,
            command.expectedSessionSettings == nil
         {

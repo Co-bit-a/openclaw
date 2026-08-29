@@ -41,7 +41,8 @@ struct ChatViewModelOutboxSettingsTests {
         #expect(await store.enqueueCommand(outboxTestCommand(
             id: "legacy-settings",
             text: "review before replay",
-            createdAt: Date().timeIntervalSince1970)))
+            createdAt: Date().timeIntervalSince1970,
+            expectedSessionSettings: nil)))
         let transport = OutboxTestTransport(
             healthy: true,
             sessions: [outboxSessionEntry(key: "main", thinkingLevels: ["off"])],
@@ -65,6 +66,30 @@ struct ChatViewModelOutboxSettingsTests {
         #expect(await transport.state.sentSessionSettings == [
             OpenClawChatSessionSettingsExpectation(permissionMode: nil, toolOverrides: nil),
         ])
+    }
+
+    @Test func `pre CAS gateway parks a fenced command with upgrade guidance`() async throws {
+        let (store, _, databaseDirectory) = try makeOutboxStore()
+        defer { try? FileManager.default.removeItem(at: databaseDirectory) }
+        #expect(await store.enqueueCommand(outboxTestCommand(
+            id: "pre-cas-settings",
+            text: "wait for gateway upgrade",
+            createdAt: Date().timeIntervalSince1970,
+            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(
+                permissionMode: .guarded,
+                toolOverrides: nil))))
+        let transport = OutboxTestTransport(
+            healthy: true,
+            supportsSessionSettingsCAS: false)
+        let vm = await makeOutboxViewModel(transport: transport, outbox: store)
+
+        await MainActor.run { vm.load() }
+        try await waitUntil("pre-CAS row parked") {
+            await store.loadCommands().first?.status == .failed
+        }
+        #expect(await transport.state.sentMessages.isEmpty)
+        #expect(await store.loadCommands().first?.lastError ==
+            "Update the gateway before sending queued messages with session settings.")
     }
 
     @Test func `failed restrictive patch cannot release a later automatic flush`() async throws {
@@ -103,11 +128,13 @@ struct ChatViewModelOutboxSettingsTests {
                         domain: "ChatViewModelOutboxSettingsTests",
                         code: 1,
                         userInfo: [NSLocalizedDescriptionKey: "Restriction was not saved."]),
-                    target: target)
+                    target: target,
+                    outboxScope: OpenClawChatOutboxScope(sessionKey: "main", agentID: "main"))
             }
         }
         await patchStarted.wait()
         #expect(await transport.state.sentMessages.isEmpty)
+        await MainActor.run { vm.switchSession(to: "other") }
         await patchRelease.open()
         try await waitUntil("queued row parked before flush") {
             await store.loadCommands().first?.status == .failed
@@ -125,5 +152,32 @@ struct ChatViewModelOutboxSettingsTests {
         try await Task.sleep(for: .milliseconds(50))
         #expect(await transport.state.sentMessages.isEmpty)
         #expect(await store.loadCommands().first?.lastError == "Restriction was not saved.")
+    }
+
+    @Test func `bulk settings failure immediately publishes failed bubble state`() async throws {
+        let (store, _, databaseDirectory) = try makeOutboxStore()
+        defer { try? FileManager.default.removeItem(at: databaseDirectory) }
+        #expect(await store.enqueueCommand(outboxTestCommand(
+            id: "visible-settings-failure",
+            text: "show the failure",
+            createdAt: Date().timeIntervalSince1970,
+            expectedSessionSettings: OpenClawChatSessionSettingsExpectation(
+                permissionMode: .guarded,
+                toolOverrides: nil))))
+        let transport = OutboxTestTransport(healthy: false)
+        let vm = await makeOutboxViewModel(transport: transport, outbox: store)
+        await MainActor.run { vm.load() }
+        try await waitUntil("queued bubble restored") {
+            await MainActor.run { vm.messages.contains { vm.outboxState(for: $0.id) == .queued } }
+        }
+
+        #expect(await store.parkQueuedCommands(
+            in: OpenClawChatOutboxScope(sessionKey: "main", agentID: "main"),
+            lastError: "Restriction was not saved."))
+        try await waitUntil("failed bubble published") {
+            await MainActor.run {
+                vm.messages.contains { vm.outboxState(for: $0.id)?.isFailed == true }
+            }
+        }
     }
 }

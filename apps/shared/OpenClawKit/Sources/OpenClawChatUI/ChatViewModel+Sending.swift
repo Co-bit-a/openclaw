@@ -347,8 +347,6 @@ extension OpenClawChatViewModel {
         let draft: SendDraft
         let runId: String
         let storedThinkingLevel: String
-        let sendSessionSettingsExpectation: OpenClawChatSessionSettingsExpectation?
-        let durableSessionSettingsExpectation: OpenClawChatSessionSettingsExpectation
         let encodedAttachments: [OpenClawChatAttachmentPayload]
         let userMessageTimestamp: Double
         let userMessageID: UUID
@@ -587,8 +585,6 @@ extension OpenClawChatViewModel {
             draft: draft,
             runId: runId,
             storedThinkingLevel: storedThinkingLevel,
-            sendSessionSettingsExpectation: self.composerSessionSettingsExpectation(),
-            durableSessionSettingsExpectation: self.durableSessionSettingsExpectation(),
             encodedAttachments: encodedAttachments,
             userMessageTimestamp: userMessageTimestamp,
             userMessageID: userMessageID)
@@ -632,6 +628,7 @@ extension OpenClawChatViewModel {
 
     private func deliverLiveSend(_ attempt: LiveSendAttempt) async {
         let sessionKey = attempt.draft.session.key
+        var durableSessionSettingsExpectation: OpenClawChatSessionSettingsExpectation?
         do {
             if let settingsError = await waitForCapabilitySettingsBarrier(in: sessionKey) {
                 await self.handleLiveSendFailure(
@@ -644,6 +641,8 @@ extension OpenClawChatViewModel {
                 return
             }
             guard isCurrentSession(attempt.draft.session) else { return }
+            let sendSessionSettingsExpectation = self.composerSessionSettingsExpectation()
+            durableSessionSettingsExpectation = self.durableSessionSettingsExpectation()
             logDiagnostic(
                 "chat.ui transport send start sessionKey=\(sessionKey) "
                     + "localRunId=\(attempt.runId)")
@@ -653,7 +652,7 @@ extension OpenClawChatViewModel {
                 target: OpenClawChatSendTarget(
                     agentID: attempt.draft.session.deliveryAgentID,
                     expectedSessionRoutingContract: attempt.draft.session.sessionRoutingContract,
-                    expectedSessionSettings: attempt.sendSessionSettingsExpectation),
+                    expectedSessionSettings: sendSessionSettingsExpectation),
                 message: attempt.draft.outgoingMessageText,
                 thinking: thinkingLevel,
                 idempotencyKey: attempt.runId,
@@ -661,7 +660,10 @@ extension OpenClawChatViewModel {
             guard isCurrentSession(attempt.draft.session) else { return }
             await self.handleLiveSendResponse(response, attempt: attempt)
         } catch {
-            await self.handleLiveSendFailure(error, attempt: attempt)
+            await self.handleLiveSendFailure(
+                error,
+                attempt: attempt,
+                durableSessionSettingsExpectation: durableSessionSettingsExpectation)
         }
     }
 
@@ -744,10 +746,12 @@ extension OpenClawChatViewModel {
     private func handleLiveSendFailure(
         _ error: Error,
         attempt: LiveSendAttempt,
+        durableSessionSettingsExpectation: OpenClawChatSessionSettingsExpectation? = nil,
         canPreserveInOutbox: Bool = true) async
     {
         guard isCurrentSession(attempt.draft.session) else { return }
         if canPreserveInOutbox,
+           let durableSessionSettingsExpectation,
            attempt.encodedAttachments.isEmpty,
            !(error is GatewayResponseError)
         {
@@ -760,7 +764,7 @@ extension OpenClawChatViewModel {
                 thinking: effectiveThinkingLevelForSend(attempt.storedThinkingLevel),
                 messageID: attempt.userMessageID,
                 session: attempt.draft.session,
-                expectedSessionSettings: attempt.durableSessionSettingsExpectation,
+                expectedSessionSettings: durableSessionSettingsExpectation,
                 deliveryIsAmbiguous: deliveryIsAmbiguous)
             if preserved {
                 self.finishAcceptedComposerSend(attempt.draft)

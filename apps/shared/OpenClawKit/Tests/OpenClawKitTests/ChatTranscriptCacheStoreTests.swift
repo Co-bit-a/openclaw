@@ -846,6 +846,7 @@ final class ChatTranscriptCacheStoreTests: ClientDatabaseTestSuite, @unchecked S
             "client-state-outbox-attempt-scope-v5",
             "client-state-outbox-attachment-rekey-v6",
             "client-state-outbox-settings-expectation-v7",
+            "client-state-outbox-settings-claim-v8",
         ])
     }
 }
@@ -1135,7 +1136,7 @@ final class ChatCommandOutboxStoreTests: ClientDatabaseTestSuite, @unchecked Sen
         #expect(await reopened.store(gatewayID: "gw-a").loadCommands().first?.expectedSessionSettings == expectation)
     }
 
-    @Test func `legacy writer round trip preserves an unknown settings column`() async throws {
+    @Test func `downgraded reader cannot claim a settings fenced row`() async throws {
         let expectation = OpenClawChatSessionSettingsExpectation(
             permissionMode: .readOnly,
             toolOverrides: OpenClawChatSessionToolOverrides(webSearch: false))
@@ -1156,14 +1157,25 @@ final class ChatCommandOutboxStoreTests: ClientDatabaseTestSuite, @unchecked Sen
         try withRawDatabase(at: directory.appendingPathComponent("client-state.sqlite")) { raw in
             execute(raw, """
             UPDATE outbox_commands
-            SET status = 'failed', last_error = 'legacy retry';
-            UPDATE outbox_commands
-            SET status = 'queued', last_error = '', retry_count = 0;
+            SET status = 'sending';
             """)
         }
 
         let reopened = try OpenClawClientDatabases(directoryURL: directory)
-        #expect(await reopened.store(gatewayID: "gw-a").loadCommands().first?.expectedSessionSettings == expectation)
+        let reopenedStore = reopened.store(gatewayID: "gw-a")
+        let failed = try #require(await reopenedStore.loadCommands().first)
+        #expect(failed.status == .failed)
+        #expect(failed.lastError == OpenClawChatSQLiteTranscriptCache.outboxClientUpgradeRequiredError)
+        #expect(failed.expectedSessionSettings == expectation)
+        #expect(await reopenedStore.markCommandRetriedIfPresent(
+            id: failed.id,
+            expectation: retryExpectation(failed),
+            agentID: "main",
+            deliverySessionKey: "agent:main:main",
+            routingContract: "per-sender|main|main",
+            expectedSessionSettings: expectation,
+            replacementID: nil) == .updated)
+        #expect(await reopenedStore.loadCommands().first?.expectedSessionSettings == expectation)
     }
 
     @Test func `nil agent rows use the canonical empty scope owner`() async throws {
