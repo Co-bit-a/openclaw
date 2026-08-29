@@ -240,12 +240,14 @@ extension OpenClawChatViewModel {
     }
 
     func composerToolEnabled(server: String, tool: String) -> Bool {
-        if self.currentSessionEntry()?.toolOverrides?.mcpToolsDeny[server]?.contains(tool) == true {
-            return false
-        }
-        return self.composerCapabilityCatalog.connectors
+        let catalogTool = self.composerCapabilityCatalog.connectors
             .first(where: { $0.name == server })?.tools
-            .first(where: { $0.name == tool }).map { $0.baseEnabled && !$0.sessionDenied } ?? false
+            .first(where: { $0.name == tool })
+        guard let catalogTool, catalogTool.baseEnabled else { return false }
+        if self.hasAppliedLiveSessions {
+            return self.currentSessionEntry()?.toolOverrides?.mcpToolsDeny[server]?.contains(tool) != true
+        }
+        return !catalogTool.sessionDenied
     }
 
     func loadComposerCapabilities(force: Bool = false) async {
@@ -359,7 +361,9 @@ extension OpenClawChatViewModel {
         else { return }
         var next = self.composerToolOverrides
         let connector = self.composerCapabilityCatalog.connectors.first { $0.name == server }
-        let effectiveDenied = connector?.tools.filter(\.sessionDenied).map(\.name) ?? []
+        let effectiveDenied = self.hasAppliedLiveSessions
+            ? []
+            : connector?.tools.filter(\.sessionDenied).map(\.name) ?? []
         var denied = Set(next.mcpToolsDeny[server] ?? effectiveDenied)
         if denied.contains(tool) {
             denied.remove(tool)

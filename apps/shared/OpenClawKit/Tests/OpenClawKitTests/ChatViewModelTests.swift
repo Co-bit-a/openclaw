@@ -7628,6 +7628,7 @@ struct ChatViewModelTests {
             connectors: [connector],
             connectorsAvailable: true,
             toolAccessAvailable: true,
+            sessionSettingsCASAvailable: true,
             toolOverrideMutationAvailable: true)
         let (transport, vm) = await makeViewModel(
             historyResponses: [historyPayload()],
@@ -7693,6 +7694,7 @@ struct ChatViewModelTests {
                 tools: [tool])],
             connectorsAvailable: true,
             toolAccessAvailable: true,
+            sessionSettingsCASAvailable: true,
             toolOverrideMutationAvailable: true)
         let denied = OpenClawChatSessionToolOverrides(
             mcpToolsDeny: ["github": ["create_issue"]])
@@ -7880,6 +7882,7 @@ struct ChatViewModelTests {
             skills: [missing, blocked, disabled],
             skillsAvailable: true,
             permissionMutationAvailable: false,
+            sessionSettingsCASAvailable: true,
             toolOverrideMutationAvailable: false,
             canSelectFullPermission: false,
             loadFailureMessage: "Could not load Web Search.")
