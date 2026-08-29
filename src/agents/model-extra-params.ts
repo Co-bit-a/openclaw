@@ -108,15 +108,6 @@ export function resolveEffectiveModelExtraParams(sources: ModelExtraParamSources
       effective.set(key, { key, effectiveKey: key, value, sourceIndex });
     }
   });
-  for (const aliases of [FAST_MODE_MODEL_PARAM_KEYS, FAST_MODE_CUTOFF_MODEL_PARAM_KEYS]) {
-    const entry = resolveModelExtraParamEntryFromSources(sources.paramSources, aliases);
-    for (const alias of aliases) {
-      effective.delete(alias);
-    }
-    if (entry) {
-      effective.set(aliases[0], { ...entry, effectiveKey: aliases[0] });
-    }
-  }
   return [...effective.values()];
 }
 

@@ -106,6 +106,7 @@ describe("OpenAI runtime routing policy", () => {
   it.each([
     ["provider-native thinking", { thinking: { type: "enabled", budget_tokens: 2_048 } }],
     ["invalid fast mode", { fastMode: { enabled: true } }],
+    ["mixed native and provider-native Fast aliases", { fastMode: true, fast_mode: {} }],
     ["invalid fast cutoff", { fastAutoOnSeconds: "30" }],
   ])("keeps %s values on the OpenClaw runtime", (_label, params) => {
     const { config } = createScopedOpenAIRoutingConfig("model", params);
