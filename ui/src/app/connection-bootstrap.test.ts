@@ -32,7 +32,7 @@ describe("connection bootstrap coordinator", () => {
 
     await vi.waitFor(() => expect(maximum).toBe(2));
     first.resolve();
-    await firstTask;
+    await Promise.all([firstTask, duplicateFirstTask]);
     expect(maximum).toBe(2);
     second.resolve();
     third.resolve();
