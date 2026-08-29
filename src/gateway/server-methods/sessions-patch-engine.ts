@@ -7,7 +7,6 @@ import {
 } from "../../../packages/gateway-protocol/src/index.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import { isInternalSessionEffectsKey } from "../../config/sessions/internal-session-key.js";
-import { SESSION_LIFECYCLE_CHANGED_ERROR_REASON } from "../../config/sessions/lifecycle.js";
 import {
   applySessionEntryCanonicalReplacements,
   type SessionEntryCanonicalReplacement,
@@ -31,7 +30,7 @@ import {
   resolveGatewaySessionStoreTargetWithStore,
   type SessionsPatchResult,
 } from "../session-utils.js";
-import { projectSessionsPatchEntry, sessionToolOverridesEqual } from "../sessions-patch.js";
+import { projectSessionsPatchEntry } from "../sessions-patch.js";
 import { gatewayClientSessionCreator } from "./gateway-client-identity.js";
 import { emitSessionsChanged } from "./session-change-event.js";
 import { resolveOperatorSessionCreation } from "./session-creation-provenance.js";
@@ -41,6 +40,12 @@ import {
   type SessionPatchArchivePreparation,
   validateSessionPatchArchiveProjection,
 } from "./sessions-patch-archive.js";
+import {
+  resolveSessionPatchExpectationError,
+  sessionChangedError,
+  sessionPatchExpectationsChanged,
+  sessionPatchTargetIdentity,
+} from "./sessions-patch-expectations.js";
 import { persistSessionPatchModelSelection } from "./sessions-patch-model-selection.js";
 import { resolveSessionWorkerPlacementPatchError, sessionLog } from "./sessions-shared.js";
 import type {
@@ -91,12 +96,6 @@ function unexpectedPatchError(key: string, error: unknown): ErrorShape {
   sessionLog.warn(`sessions.patch: target failed for ${key}: ${formatErrorMessage(error)}`);
   const message = "Session patch failed unexpectedly. Retry the request.";
   return errorShape(ErrorCodes.UNAVAILABLE, message, { retryable: true });
-}
-
-function sessionChangedError(key: string): ErrorShape {
-  return errorShape(ErrorCodes.INVALID_REQUEST, `Session ${key} changed before patch. Retry.`, {
-    details: { reason: SESSION_LIFECYCLE_CHANGED_ERROR_REASON },
-  });
 }
 
 function pluginOwnershipError(
@@ -232,23 +231,11 @@ async function executeSessionPatchMutations(params: {
     // its public identity fields so closures can never reach hooks or entries.
     const { commitGuard: _commitGuard, ...identity } = input;
     const fullPatch: SessionsPatchParams = { ...params.patch, ...identity };
-    if (fullPatch.expectedPermissionMode !== undefined && fullPatch.permissionMode === undefined) {
+    const expectationError = resolveSessionPatchExpectationError(fullPatch);
+    if (expectationError) {
       outcomes[index] = {
         ok: false,
-        error: errorShape(
-          ErrorCodes.INVALID_REQUEST,
-          "expectedPermissionMode requires a permissionMode replacement.",
-        ),
-      };
-      continue;
-    }
-    if (fullPatch.expectedToolOverrides !== undefined && fullPatch.toolOverrides === undefined) {
-      outcomes[index] = {
-        ok: false,
-        error: errorShape(
-          ErrorCodes.INVALID_REQUEST,
-          "expectedToolOverrides requires a toolOverrides replacement.",
-        ),
+        error: errorShape(ErrorCodes.INVALID_REQUEST, expectationError),
       };
       continue;
     }
@@ -425,14 +412,7 @@ async function executeSessionPatchMutations(params: {
                           (target.fullPatch.expectedLifecycleRevision !== undefined &&
                             existingEntry?.lifecycleRevision !==
                               target.fullPatch.expectedLifecycleRevision) ||
-                          (target.fullPatch.expectedPermissionMode !== undefined &&
-                            (existingEntry?.permissionMode ?? null) !==
-                              target.fullPatch.expectedPermissionMode) ||
-                          (target.fullPatch.expectedToolOverrides !== undefined &&
-                            !sessionToolOverridesEqual(
-                              existingEntry?.toolOverrides,
-                              target.fullPatch.expectedToolOverrides,
-                            ));
+                          sessionPatchExpectationsChanged(existingEntry, target.fullPatch);
                         const lifecycleEntryRemoved =
                           target.initialEntry !== undefined && existingEntry === undefined;
                         const archiveTargetChanged =
@@ -709,23 +689,7 @@ export async function executeSessionPatch(params: {
   patch: SessionsPatchParams;
   sessionMutationAuthorization?: SessionMutationAuthorization;
 }): Promise<{ ok: false; error: ErrorShape } | { ok: true; result: SessionsPatchResult }> {
-  const target = {
-    key: params.patch.key,
-    ...(params.patch.agentId ? { agentId: params.patch.agentId } : {}),
-    ...(params.patch.expectedSessionId !== undefined
-      ? { expectedSessionId: params.patch.expectedSessionId }
-      : {}),
-    ...(params.patch.expectedLifecycleRevision !== undefined
-      ? { expectedLifecycleRevision: params.patch.expectedLifecycleRevision }
-      : {}),
-    ...(params.patch.expectedPermissionMode !== undefined
-      ? { expectedPermissionMode: params.patch.expectedPermissionMode }
-      : {}),
-    ...(params.patch.expectedToolOverrides !== undefined
-      ? { expectedToolOverrides: params.patch.expectedToolOverrides }
-      : {}),
-    expectedMarkedUnreadAt: params.patch.expectedMarkedUnreadAt,
-  };
+  const target = sessionPatchTargetIdentity(params.patch);
   const executed = await executeSessionPatchMutations({
     client: params.client,
     context: params.context,
