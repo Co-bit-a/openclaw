@@ -93,7 +93,7 @@ export type ApplicationContext<TRouteId extends string = string> = {
   readonly resourceBasePath: string;
   readonly gateway: ApplicationGateway;
   /** App-owned queue for automatic Gateway reconnect bootstrap work. */
-  readonly connectionBootstrap?: ConnectionBootstrapCoordinator;
+  readonly connectionBootstrap: ConnectionBootstrapCoordinator;
   readonly agents: AgentCapability;
   readonly agentIdentity: AgentIdentityCapability;
   readonly agentSelection: AgentSelectionCapability;

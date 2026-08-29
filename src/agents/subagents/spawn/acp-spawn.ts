@@ -76,6 +76,11 @@ import {
   validateAcpResumeSessionOwnership,
 } from "./acp-spawn-requester.js";
 import {
+  createAcpSpawnFailure,
+  type SpawnAcpMode,
+  type SpawnAcpResult,
+} from "./acp-spawn-result.js";
+import {
   bindPreparedAcpThread,
   initializeAcpSpawnRuntime,
   resolveAcpSessionMode,
@@ -87,11 +92,6 @@ import {
   resolveConfiguredAcpSubagentTargetIds,
   resolveTargetAcpAgentId,
 } from "./acp-spawn-target.js";
-import {
-  createAcpSpawnFailure,
-  type SpawnAcpMode,
-  type SpawnAcpResult,
-} from "./acp-spawn-result.js";
 import { readParentExecutionIdentity } from "./execution-identity-spawn-context.js";
 import {
   isSubagentEnvelopeSession,

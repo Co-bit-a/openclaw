@@ -31,11 +31,17 @@ function createProfileAppearanceGateway(profileId: string | null) {
     hello: { auth: { role: "operator", scopes: ["operator.write"] } },
   } as ApplicationGatewaySnapshot;
   const refreshTheme = vi.fn();
+  const connectionBootstrap = {
+    reset: vi.fn(),
+    run: (_key: string, task: () => Promise<void>) => task(),
+    synchronize: vi.fn(),
+  };
   const context = {
     gateway: {
       connection: { gatewayUrl: "ws://profile.test" },
       snapshot,
     },
+    connectionBootstrap,
     runtimeConfig: {
       canPatch: false,
       ensureLoaded: vi.fn(async () => undefined),

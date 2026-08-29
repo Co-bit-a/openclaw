@@ -8,7 +8,6 @@ type QueuedBootstrapTask = {
   reject: (reason?: unknown) => void;
   resolve: () => void;
   run: () => Promise<void>;
-  scheduled: Promise<void>;
 };
 
 export type ConnectionBootstrapCoordinator = {
@@ -47,11 +46,11 @@ export function createConnectionBootstrapCoordinator(): ConnectionBootstrapCoord
       try {
         work = task.run();
       } catch (error) {
-        work = Promise.reject(error instanceof Error ? error : new Error(String(error)));
+        work = Promise.reject(error);
       }
       void work
         .then(task.resolve, (error: unknown) => {
-          if (tasks.get(task.key) === task.scheduled) {
+          if (task.generation === generation) {
             tasks.delete(task.key);
           }
           task.reject(error);
@@ -104,7 +103,7 @@ export function createConnectionBootstrapCoordinator(): ConnectionBootstrapCoord
         reject = rejectTask;
       });
       tasks.set(key, scheduled);
-      queued.push({ generation, key, reject, resolve, run: task, scheduled });
+      queued.push({ generation, key, reject, resolve, run: task });
       drain();
       return scheduled;
     },

@@ -10,7 +10,6 @@ import {
 } from "../components/panel-toggle-contract.ts";
 import { i18n, isSupportedLocale } from "../i18n/index.ts";
 import type { ShellRouteState } from "./app-host-route-state.ts";
-import { createConnectionBootstrapCoordinator } from "./connection-bootstrap.ts";
 import type { ApplicationContext } from "./context.ts";
 import { hasOperatorWriteAccess } from "./operator-access.ts";
 import {
@@ -90,7 +89,6 @@ function diffAgentRoster(
 }
 
 export class ShellGatewayOwner {
-  private readonly standaloneConnectionBootstrap = createConnectionBootstrapCoordinator();
   private runtimeConfigProfileId: string | null = null;
   private profileAppearanceSource: {
     client: GatewayBrowserClient;
@@ -289,29 +287,23 @@ export class ShellGatewayOwner {
   synchronizeGateway(snapshot: ApplicationContext["gateway"]["snapshot"]): void {
     const previousPhase = this.host.previousGatewayPhase;
     this.host.previousGatewayPhase = snapshot.phase;
-    const connectionBootstrap =
-      this.host.context?.connectionBootstrap ?? this.standaloneConnectionBootstrap;
-    connectionBootstrap.synchronize({
-      client: snapshot.client,
-      connected: snapshot.phase === "connected",
-    });
     this.updateGatewaySessionKey(snapshot);
     const context = this.host.context;
     if (snapshot.phase === "connected" && context) {
-      void connectionBootstrap
+      void context.connectionBootstrap
         .run("runtime-config", async () => {
           await this.ensureRuntimeConfig(snapshot, context.runtimeConfig);
           await this.refreshProfileAppearancePrefs(context);
         })
         .catch(() => undefined);
       if (this.host.routeState.routeId && !context.agents.state.agentsList) {
-        void connectionBootstrap
+        void context.connectionBootstrap
           .run("agents", async () => {
             await this.ensureAgentsList(snapshot, context.agents);
           })
           .catch(() => undefined);
       }
-      void connectionBootstrap
+      void context.connectionBootstrap
         .run("outbox", async () => {
           await this.host.outboxStoreImport.load();
         })
@@ -446,7 +438,6 @@ export class ShellGatewayOwner {
   }
 
   reset(): void {
-    (this.host.context?.connectionBootstrap ?? this.standaloneConnectionBootstrap).reset();
     void this.host.criticalNoticeRuntime?.then((runtime) => runtime.resetCriticalObserverTracker());
     this.host.agentsListClient = null;
     this.host.agentsListSource = null;
