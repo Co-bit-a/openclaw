@@ -27,6 +27,7 @@ export async function handleAcpDispatchTailAfterReset(
               runId: state.params.replyOptions?.runId,
               sessionKey: state.acpDispatchSessionKey,
               toolsAllow: state.params.replyOptions?.toolsAllow,
+              admittedSessionSettings: state.params.replyOptions?.admittedSessionSettings,
               images: state.params.replyOptions?.images,
               inboundAudio: state.inboundAudio,
               sessionTtsAuto: state.sessionTtsAuto,

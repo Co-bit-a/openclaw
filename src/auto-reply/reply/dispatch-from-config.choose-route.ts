@@ -628,6 +628,7 @@ export async function chooseDispatchRoute(state: PrepareDispatchOperationReadySt
                   runId: params.replyOptions?.runId,
                   sessionKey: acpDispatchSessionKey,
                   toolsAllow: params.replyOptions?.toolsAllow,
+                  admittedSessionSettings: params.replyOptions?.admittedSessionSettings,
                   images: params.replyOptions?.images,
                   inboundAudio: state.inboundAudio,
                   sessionTtsAuto,

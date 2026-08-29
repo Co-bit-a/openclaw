@@ -362,6 +362,9 @@ async function runDispatch(params: {
   suppressReplyLifecycle?: boolean;
   sourceReplyDeliveryMode?: "automatic" | "message_tool_only";
   toolsAllow?: string[];
+  admittedSessionSettings?: Parameters<
+    typeof tryDispatchAcpReplyCore
+  >[0]["admittedSessionSettings"];
   recordProcessed?: (
     outcome: "completed" | "skipped" | "error",
     opts?: { reason?: string; error?: string },
@@ -402,6 +405,7 @@ async function runDispatch(params: {
     shouldSendFullToolDetails: false,
     bypassForCommand: false,
     toolsAllow: params.toolsAllow,
+    admittedSessionSettings: params.admittedSessionSettings,
     ...(params.onReplyStart ? { onReplyStart: params.onReplyStart } : {}),
     recordProcessed: params.recordProcessed ?? vi.fn(),
     markIdle: params.markIdle ?? vi.fn(),
@@ -2910,11 +2914,31 @@ describe("tryDispatchAcpReplyCore", () => {
     expect(managerMocks.runTurn).not.toHaveBeenCalled();
     expect(dispatcherCall(dispatcher.sendFinalReply).isError).toBe(true);
     expect(dispatcherCall(dispatcher.sendFinalReply).text).toContain(
-      "cannot enforce its tool policy",
+      "cannot enforce its permission or tool policy",
     );
     expect(auditMocks.emitAcpLifecycleError).toHaveBeenCalledWith(
       expect.objectContaining({ terminalOutcome: "blocked" }),
     );
+  });
+
+  it("fails closed before runTurn for admitted session restrictions", async () => {
+    setReadyAcpResolution();
+    const { dispatcher } = createDispatcher();
+
+    await runDispatch({
+      bodyForAgent: "test",
+      dispatcher,
+      admittedSessionSettings: {
+        permissionMode: "guarded",
+        toolOverrides: { webSearch: false },
+      },
+    });
+
+    expect(managerMocks.runTurn).not.toHaveBeenCalled();
+    expect(dispatcherCall(dispatcher.sendFinalReply)).toMatchObject({
+      isError: true,
+      text: expect.stringContaining("cannot enforce its permission or tool policy"),
+    });
   });
 
   it("fails visibly when a bound ACP runtime receives restrictive conversation policy", async () => {
