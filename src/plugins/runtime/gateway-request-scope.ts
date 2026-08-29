@@ -29,6 +29,18 @@ type PluginRuntimeGatewayRequestScope = {
     },
     invoke: (assertCurrent: () => void, signal: AbortSignal) => Promise<T>,
   ) => Promise<T | undefined>;
+  /** Closure-bound admitted owner used to validate placement grant bindings. */
+  nodePlacementGrantAuthority?: {
+    agentId: string;
+    sessionKey: string;
+    runId: string;
+    assertCurrent: (request: {
+      pluginId: string;
+      command: string;
+      nodeId: string;
+      workspace: OpenClawPluginNodeWorkspace;
+    }) => void;
+  };
   context?: GatewayRequestContext;
   resolveGatewayContext?: GatewayContextResolver;
   client?: GatewayRequestOptions["client"];

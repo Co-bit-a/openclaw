@@ -3880,6 +3880,7 @@ EOF`,
         resolver: { kind: "device", id: "reviewer-1" },
         databaseOptions: databaseOptions(),
         standingGrant: {
+          kind: "cron",
           agentId: "main",
           cronJobId: "job-1",
           jobConfigRevision: revision,

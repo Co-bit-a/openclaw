@@ -167,16 +167,16 @@ export function createCodexNodeExecServerInvokePolicy(): OpenClawPluginNodeInvok
       }
       const nodeName = context.node?.displayName ?? context.nodeId;
       const approval = await context.approvals.request({
-        title: "Run Codex execution on node",
-        description: `${nodeName}: ${placement.cwd}; allows arbitrary processes and filesystem access across the node account, not only this workspace.`,
+        title: "Run Codex on this node placement",
+        description: `${nodeName}: ${placement.cwd}; allows arbitrary processes and filesystem access across the node account, not only this workspace. Allow always applies only while this exact placement remains active.`,
         severity: "critical",
-        allowedDecisions: ["allow-once"],
+        allowedDecisions: ["allow-once", "allow-always"],
       });
-      if (approval.decision !== "allow-once") {
+      if (approval.decision !== "allow-once" && approval.decision !== "allow-always") {
         return {
           ok: false,
           code: "CODEX_NODE_EXEC_APPROVAL_DENIED",
-          message: "Codex node execution requires one-time approval.",
+          message: "Codex node execution requires approval for this launch or placement.",
         };
       }
       return await context.invokeNode({

@@ -247,7 +247,7 @@ describe("Codex node exec-server", () => {
   it.each([
     { host: "paired device", nodeId: "paired-node" },
     { host: "cloud worker", nodeId: "cloud-worker-node" },
-  ])("requires critical one-time approval on a $host", async ({ nodeId }) => {
+  ])("requires critical scoped approval on a $host", async ({ nodeId }) => {
     const policy = createCodexNodeExecServerInvokePolicy();
     expect(policy.commands).toEqual([CODEX_NODE_EXEC_SERVER_COMMAND]);
     expect(policy.dangerous).toBe(true);
@@ -270,7 +270,7 @@ describe("Codex node exec-server", () => {
       invokeNode,
     } satisfies OpenClawPluginNodeInvokePolicyContext;
 
-    for (const decision of ["deny", "allow-always", null] as const) {
+    for (const decision of ["deny", null] as const) {
       request.mockResolvedValueOnce({ decision });
       await expect(policy.handle(context)).resolves.toMatchObject({
         ok: false,
@@ -291,6 +291,14 @@ describe("Codex node exec-server", () => {
       code: "CODEX_NODE_EXEC_WORKSPACE_INVALID",
     });
     expect(invokeNode).not.toHaveBeenCalled();
+
+    request.mockResolvedValueOnce({ decision: "allow-always" });
+    await expect(policy.handle(context)).resolves.toEqual({
+      ok: true,
+      payload: { connected: true },
+    });
+    expect(invokeNode).toHaveBeenCalledOnce();
+    invokeNode.mockClear();
 
     const approvedPlacement = { ...placement };
     request.mockImplementationOnce(async () => {
@@ -314,14 +322,17 @@ describe("Codex node exec-server", () => {
     });
     expect(request).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "Run Codex execution on node",
+        title: "Run Codex on this node placement",
         description: expect.stringContaining(`${nodeId}: ${approvedPlacement.cwd}`),
         severity: "critical",
-        allowedDecisions: ["allow-once"],
+        allowedDecisions: ["allow-once", "allow-always"],
       }),
     );
     expect(request.mock.lastCall?.[0].description).toContain(
       "arbitrary processes and filesystem access across the node account",
+    );
+    expect(request.mock.lastCall?.[0].description).toContain(
+      "Allow always applies only while this exact placement remains active",
     );
   });
 

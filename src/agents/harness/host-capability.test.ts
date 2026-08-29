@@ -203,8 +203,30 @@ describe("agent harness host capability", () => {
           { isWebchatConnect: () => false, assertNodeExecutionCurrent: assertPlacementCurrent },
           () =>
             host.runWithScope(async () => {
-              const invoke = getPluginRuntimeGatewayRequestScope()?.invokeWithSessionNodeAuthority;
+              const requestScope = getPluginRuntimeGatewayRequestScope();
+              const invoke = requestScope?.invokeWithSessionNodeAuthority;
               expect(invoke).toBeTypeOf("function");
+              const placementGrantAuthority = requestScope?.nodePlacementGrantAuthority;
+              expect(placementGrantAuthority).toMatchObject({
+                agentId: "main",
+                sessionKey: sessionTarget.sessionKey,
+                runId: `run-${change}`,
+              });
+              const placementGrantRequest = {
+                pluginId: "fixture",
+                command: "fixture.exec",
+                nodeId: "node-1",
+                workspace: {
+                  workspaceDir: "/node/workspace",
+                  sessionKey: sessionTarget.sessionKey,
+                  sessionId: "session-1",
+                  environmentId: "environment-1",
+                  ownerEpoch: 2,
+                },
+              };
+              expect(() =>
+                placementGrantAuthority?.assertCurrent(placementGrantRequest),
+              ).not.toThrow();
               const ready = createDeferred();
               const release = createDeferred();
               const result = invoke!(
@@ -272,6 +294,10 @@ describe("agent harness host capability", () => {
               if (change === "none") {
                 await expect(result).resolves.toBe("launched");
                 expect(dispatched).toHaveBeenCalledOnce();
+                host.close();
+                expect(() => placementGrantAuthority?.assertCurrent(placementGrantRequest)).toThrow(
+                  "no longer active",
+                );
               } else {
                 await expect(result).rejects.toThrow(/no longer (active|current)/);
                 expect(dispatched).not.toHaveBeenCalled();

@@ -649,6 +649,8 @@ export async function runWithGatewayRequestEnvelope<T>(
             ? {
                 invokeWithSessionNodeAuthority:
                   getPluginRuntimeGatewayRequestScope()?.invokeWithSessionNodeAuthority,
+                nodePlacementGrantAuthority:
+                  getPluginRuntimeGatewayRequestScope()?.nodePlacementGrantAuthority,
               }
             : {}),
           ...(pluginRegistry ? { pluginRegistry } : {}),
