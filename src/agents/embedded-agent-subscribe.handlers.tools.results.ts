@@ -460,6 +460,7 @@ function queuePendingToolMedia(
   ctx: ToolHandlerContext,
   mediaReply: NonNullable<ReturnType<typeof extractToolResultMediaArtifact>>,
   allowedMediaUrls: string[],
+  autoDelivery: boolean,
 ) {
   const indexByUrl = new Map(
     ctx.state.pendingToolMediaUrls.map((url, index) => [url.trim(), index]),
@@ -479,6 +480,12 @@ function queuePendingToolMedia(
       ctx.state.pendingToolMediaTrustByUrl.set(normalized, true);
     } else if (!ctx.state.pendingToolMediaTrustByUrl.has(normalized)) {
       ctx.state.pendingToolMediaTrustByUrl.set(normalized, false);
+    }
+    if (autoDelivery) {
+      ctx.state.toolAutoDeliveryMediaUrls.add(normalized);
+    } else {
+      // One shared URL with mixed provenance must never inherit auto-delivery.
+      ctx.state.toolAutoDeliveryMediaUrls.delete(normalized);
     }
     const attachment = attachmentsByUrl.get(normalized);
     const existingIndex = indexByUrl.get(normalized);
@@ -713,5 +720,9 @@ export async function emitToolResultOutput(params: {
   if (mediaUrls.length === 0) {
     return;
   }
-  queuePendingToolMedia(ctx, mediaReply, mediaUrls);
+  const autoDelivery =
+    rawToolName.trim() === "tts" &&
+    ctx.params.coreBuiltinToolNames?.has("tts") === true &&
+    mediaReply.trustedLocalMedia === true;
+  queuePendingToolMedia(ctx, mediaReply, mediaUrls, autoDelivery);
 }

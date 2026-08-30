@@ -54,6 +54,7 @@ type TerminalAttemptState = Pick<
   | "heartbeatToolResponse"
   | "lastToolError"
   | "toolMediaUrls"
+  | "toolAutoDeliveryMediaUrls"
   | "toolAudioAsVoice"
   | "toolTrustedLocalMedia"
   | "hasToolMediaBlockReply"
@@ -81,6 +82,7 @@ export function hasAttemptTerminalState(attempt: TerminalAttemptState): boolean 
     attempt.heartbeatToolResponse ||
     attempt.lastToolError ||
     attempt.toolMediaUrls?.some((url) => url.trim().length > 0) ||
+    attempt.toolAutoDeliveryMediaUrls?.some((url) => url.trim().length > 0) ||
     attempt.toolAudioAsVoice ||
     attempt.toolTrustedLocalMedia ||
     attempt.hasToolMediaBlockReply ||

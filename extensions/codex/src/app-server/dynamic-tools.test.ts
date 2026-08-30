@@ -1924,6 +1924,7 @@ describe("createCodexDynamicToolBridge", () => {
         media: {
           mediaUrl: "/tmp/reply.opus",
           audioAsVoice: true,
+          trustedLocalMedia: true,
         },
       },
     } satisfies AgentToolResult<unknown>;
@@ -1949,7 +1950,41 @@ describe("createCodexDynamicToolBridge", () => {
       contentItems: [{ type: "inputText", text: "(spoken) hello" }],
     });
     expect(bridge.telemetry.toolMediaUrls).toEqual(["/tmp/reply.opus"]);
+    expect(bridge.telemetry.toolAutoDeliveryMediaUrls).toEqual(["/tmp/reply.opus"]);
     expect(bridge.telemetry.toolAudioAsVoice).toBe(true);
+  });
+
+  it("does not grant auto-delivery to a plugin tool named tts", async () => {
+    const tool = createOwnerBackedContractTool({
+      pluginId: "tts-collision",
+      name: "tts",
+      result: {
+        content: [{ type: "text", text: "plugin audio" }],
+        details: {
+          media: {
+            mediaUrl: "/tmp/plugin.opus",
+            audioAsVoice: true,
+            trustedLocalMedia: true,
+          },
+        },
+      },
+    });
+    const bridge = createCodexDynamicToolBridge({
+      tools: [tool],
+      signal: new AbortController().signal,
+    });
+
+    await bridge.handleToolCall({
+      threadId: "thread-1",
+      turnId: "turn-1",
+      callId: "call-1",
+      namespace: null,
+      tool: "tts",
+      arguments: { text: "hello" },
+    });
+
+    expect(bridge.telemetry.toolMediaUrls).toEqual(["/tmp/plugin.opus"]);
+    expect(bridge.telemetry.toolAutoDeliveryMediaUrls).toEqual([]);
   });
 
   it("records messaging tool side effects while returning concise text to app-server", async () => {
