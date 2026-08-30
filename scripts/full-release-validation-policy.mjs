@@ -305,7 +305,7 @@ export function normalizeReleaseTelegramWaiver({
   }
   if (
     rerunGroup === "npm-telegram" ||
-    String(liveSuiteFilter)
+    liveSuiteFilter
       .toLowerCase()
       .split(",")
       .some((lane) => ["qa-live-telegram", "qa-telegram", "telegram"].includes(lane.trim()))
@@ -741,7 +741,9 @@ function releaseExecutionPlanShape(payload) {
     ? ATTEMPT_AWARE_V2_EXECUTION_PLAN_KEYS
     : HISTORICAL_EXECUTION_PLAN_KEYS;
   const expectedPlanKeys = Object.hasOwn(payload, "telegramWaiver")
-    ? [...basePlanKeys, "targetVersion", "telegramWaiver"].toSorted()
+    ? [...basePlanKeys, "targetVersion", "telegramWaiver"].toSorted((left, right) =>
+        left.localeCompare(right),
+      )
     : basePlanKeys;
   const expectedChildKeys = hasAttemptEvidence
     ? ATTEMPT_AWARE_EXECUTION_PLAN_CHILD_KEYS

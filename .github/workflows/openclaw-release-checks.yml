@@ -426,17 +426,17 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout Telegram waiver target manifest
+      - name: Read Telegram waiver target manifest
         if: inputs.telegram_waiver != ''
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ steps.ref.outputs.sha }}
-          path: waiver-target
-          sparse-checkout: package.json
-          sparse-checkout-cone-mode: false
-          fetch-depth: 1
-          persist-credentials: false
-          submodules: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.ref.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # Admission needs package metadata only; never execute the target here.
+          mkdir -p waiver-target
+          gh api "repos/${GITHUB_REPOSITORY}/contents/package.json?ref=${TARGET_SHA}" --jq .content |
+            base64 --decode > waiver-target/package.json
 
       - name: Capture selected inputs
         id: inputs
