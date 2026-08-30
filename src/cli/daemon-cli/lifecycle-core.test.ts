@@ -22,8 +22,11 @@ const loadConfig = vi.fn<() => OpenClawConfig>(() => ({
   },
 }));
 const writeGatewayRestartIntentSync = vi.fn();
-const writeGatewayStopIntentSync = vi.fn();
 const clearGatewayRestartIntentSync = vi.fn();
+const runWithGatewayStopIntent = vi.fn(
+  async (_opts: { force?: boolean; targetPid?: number }, mutate: () => Promise<unknown>) =>
+    await mutate(),
+);
 const appendGatewayLifecycleAudit = vi.fn();
 const MISSING_SERVICE_PROGRAM = "/openclaw-test-missing-runtime/node";
 const SERVICE_REPAIR_COMMAND_CASES = [
@@ -53,8 +56,11 @@ vi.mock("../../runtime.js", () => ({
 
 vi.mock("../../infra/restart-intent.js", () => ({
   clearGatewayRestartIntentSync: () => clearGatewayRestartIntentSync(),
+  runWithGatewayStopIntent: (
+    opts: { force?: boolean; targetPid?: number },
+    mutate: () => Promise<unknown>,
+  ) => runWithGatewayStopIntent(opts, mutate),
   writeGatewayRestartIntentSync: (opts: unknown) => writeGatewayRestartIntentSync(opts),
-  writeGatewayStopIntentSync: (opts: unknown) => writeGatewayStopIntentSync(opts),
 }));
 
 vi.mock("./lifecycle-audit.js", () => ({
@@ -160,7 +166,9 @@ describe("runServiceRestart token drift", () => {
     });
     resetLifecycleServiceMocks();
     writeGatewayRestartIntentSync.mockClear();
-    writeGatewayStopIntentSync.mockReset().mockReturnValue(true);
+    runWithGatewayStopIntent
+      .mockReset()
+      .mockImplementation(async (_opts, mutate) => await mutate());
     clearGatewayRestartIntentSync.mockClear();
     service.readCommand.mockResolvedValue({
       programArguments: [],
@@ -582,9 +590,11 @@ describe("runServiceRestart token drift", () => {
       opts: { json: true, force: true },
     });
 
-    expect(writeGatewayStopIntentSync).toHaveBeenCalledWith({ targetPid: 1234 });
+    expect(runWithGatewayStopIntent).toHaveBeenCalledWith(
+      { force: true, targetPid: 1234 },
+      expect.any(Function),
+    );
     expect(service.stop).toHaveBeenCalledOnce();
-    expect(clearGatewayRestartIntentSync).not.toHaveBeenCalled();
   });
 
   it("keeps ordinary managed stops cooperative", async () => {
@@ -592,7 +602,10 @@ describe("runServiceRestart token drift", () => {
 
     await runServiceStop({ serviceNoun: "Gateway", service, opts: { json: true } });
 
-    expect(writeGatewayStopIntentSync).not.toHaveBeenCalled();
+    expect(runWithGatewayStopIntent).toHaveBeenCalledWith(
+      { force: false, targetPid: undefined },
+      expect.any(Function),
+    );
     expect(service.stop).toHaveBeenCalledOnce();
   });
 
@@ -619,7 +632,10 @@ describe("runServiceRestart token drift", () => {
     const [stopOptions] = service.stop.mock.calls[0] ?? [];
     expect(stopOptions?.env).toBe(process.env);
     expect(stopOptions?.disable).toBe(true);
-    expect(writeGatewayStopIntentSync).toHaveBeenCalledWith({ targetPid: 1234 });
+    expect(runWithGatewayStopIntent).toHaveBeenCalledWith(
+      { force: true, targetPid: 1234 },
+      expect.any(Function),
+    );
     expect(onNotLoaded).not.toHaveBeenCalled();
   });
 

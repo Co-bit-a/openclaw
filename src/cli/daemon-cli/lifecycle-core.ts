@@ -21,8 +21,8 @@ import { isGatewaySecretRefUnavailableError } from "../../gateway/credentials.js
 import {
   clearGatewayRestartIntentSync,
   type GatewayRestartIntent,
+  runWithGatewayStopIntent,
   writeGatewayRestartIntentSync,
-  writeGatewayStopIntentSync,
 } from "../../infra/restart-intent.js";
 import { isWSL } from "../../infra/wsl.js";
 import { defaultRuntime } from "../../runtime.js";
@@ -370,25 +370,22 @@ export async function runServiceStop(params: {
     serviceNoun: params.serviceNoun,
     action: "stop",
   });
-  let wroteStopIntent = false;
   const stopService = async () => {
-    if (params.serviceNoun === "Gateway" && params.opts?.force) {
-      const runtime = await params.service.readRuntime(process.env).catch(() => null);
-      wroteStopIntent = writeGatewayStopIntentSync({ targetPid: runtime?.pid });
-    }
-    try {
-      await params.service.stop({
-        env: process.env,
-        stdout,
-        disable: params.opts?.disable,
-        onMutation: gatewayStopAudit,
-      });
-    } catch (err) {
-      if (wroteStopIntent) {
-        clearGatewayRestartIntentSync();
-      }
-      throw err;
-    }
+    const forceGatewayStop = params.serviceNoun === "Gateway" && Boolean(params.opts?.force);
+    const runtime = forceGatewayStop
+      ? await params.service.readRuntime(process.env).catch(() => null)
+      : null;
+    await runWithGatewayStopIntent(
+      { force: forceGatewayStop, targetPid: runtime?.pid },
+      async () => {
+        await params.service.stop({
+          env: process.env,
+          stdout,
+          disable: params.opts?.disable,
+          onMutation: gatewayStopAudit,
+        });
+      },
+    );
   };
 
   const loaded = await resolveServiceLoadedOrFail({

@@ -20,7 +20,6 @@ const readActiveGatewayLockIdentity = vi.hoisted(() => vi.fn());
 const findVerifiedGatewayListenerPidsOnPortSync = vi.fn();
 const signalVerifiedGatewayPidSync = vi.fn();
 const writeGatewayRestartIntentSync = vi.fn();
-const writeGatewayStopIntentSync = vi.fn();
 const clearGatewayRestartIntentSync = vi.fn();
 const findInstalledSystemdGatewayScope = vi.fn();
 const probeGateway = vi.fn();
@@ -59,8 +58,11 @@ vi.mock("../../infra/gateway-lock.js", async (importOriginal) => {
 });
 
 vi.mock("../../infra/restart-intent.js", () => ({
+  runWithGatewayStopIntent: async (
+    _opts: { force?: boolean; targetPid?: number },
+    mutate: () => Promise<unknown>,
+  ) => await mutate(),
   writeGatewayRestartIntentSync: (params: unknown) => writeGatewayRestartIntentSync(params),
-  writeGatewayStopIntentSync: (params: unknown) => writeGatewayStopIntentSync(params),
   clearGatewayRestartIntentSync: () => clearGatewayRestartIntentSync(),
 }));
 

@@ -17,8 +17,8 @@ import {
   consumeGatewayLifecycleIntentSync,
   consumeGatewayRestartIntentPayloadSync,
   consumeGatewayRestartIntentSync,
+  runWithGatewayStopIntent,
   writeGatewayRestartIntentSync,
-  writeGatewayStopIntentSync,
 } from "./restart-intent.js";
 
 const tempDirs: string[] = [];
@@ -186,10 +186,10 @@ describe("gateway restart intent", () => {
     expect(consumeGatewayRestartIntentPayloadSync(env)).toEqual({ reason: "second" });
   });
 
-  it("round-trips a PID-bound forced stop intent", () => {
+  it("round-trips a PID-bound forced stop intent", async () => {
     const env = createIntentEnv();
 
-    expect(writeGatewayStopIntentSync({ env, targetPid: process.pid })).toBe(true);
+    await runWithGatewayStopIntent({ env, force: true, targetPid: process.pid }, async () => {});
     expect(readIntentRow(env)).toMatchObject({
       kind: "gateway-stop",
       pid: process.pid,
@@ -198,6 +198,34 @@ describe("gateway restart intent", () => {
       wait_ms: null,
     });
     expect(consumeGatewayLifecycleIntentSync(env)).toEqual({ kind: "stop", force: true });
+    expect(readIntentRow(env)).toBeUndefined();
+  });
+
+  it("persists a forced stop intent before the service mutation", async () => {
+    const env = createIntentEnv();
+
+    const result = await runWithGatewayStopIntent(
+      { env, force: true, targetPid: process.pid },
+      async () => {
+        expect(readIntentRow(env)).toMatchObject({ kind: "gateway-stop", pid: process.pid });
+        return "stopped";
+      },
+    );
+
+    expect(result).toBe("stopped");
+    expect(consumeGatewayLifecycleIntentSync(env)).toEqual({ kind: "stop", force: true });
+  });
+
+  it("clears a forced stop intent when the service mutation fails", async () => {
+    const env = createIntentEnv();
+
+    await expect(
+      runWithGatewayStopIntent({ env, force: true, targetPid: process.pid }, async () => {
+        expect(readIntentRow(env)).toMatchObject({ kind: "gateway-stop", pid: process.pid });
+        throw new Error("service mutation failed");
+      }),
+    ).rejects.toThrow("service mutation failed");
+
     expect(readIntentRow(env)).toBeUndefined();
   });
 });

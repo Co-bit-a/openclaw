@@ -669,37 +669,35 @@ export async function runGatewayLoop(params: {
               ["force", restartIntent?.force === true],
             ],
           );
+        } else if (forceStop) {
+          const snapshot = eagerLifecycleRuntime.createGatewayActiveWorkSnapshot();
+          if (snapshot.counts.embeddedRuns > 0) {
+            // A lifecycle stop is recoverable on the next Gateway start, so use the
+            // established restart abort reason instead of classifying it as user cancellation.
+            eagerLifecycleRuntime.abortEmbeddedAgentRun(undefined, {
+              mode: "compacting",
+              reason: "restart",
+            });
+          }
+          gatewayLog.warn(
+            `forced stop requested; skipping active work drain: ${snapshot.blockers.map((blocker) => blocker.message).join("; ") || "no active work"}`,
+          );
         } else {
           // Keep all process-owned work alive without spending the shutdown reserve
           // that server teardown and the supervisor watchdog need.
-          if (forceStop) {
-            const snapshot = eagerLifecycleRuntime.createGatewayActiveWorkSnapshot();
-            if (snapshot.counts.embeddedRuns > 0) {
-              // A lifecycle stop is recoverable on the next Gateway start, so use the
-              // established restart abort reason instead of classifying it as user cancellation.
-              eagerLifecycleRuntime.abortEmbeddedAgentRun(undefined, {
-                mode: "compacting",
-                reason: "restart",
-              });
-            }
-            gatewayLog.warn(
-              `forced stop requested; skipping active work drain: ${snapshot.blockers.map((blocker) => blocker.message).join("; ") || "no active work"}`,
+          try {
+            const activeWorkDrain = await eagerLifecycleRuntime.waitForGatewayActiveWork(
+              Math.max(0, SHUTDOWN_TIMEOUT_MS - RESTART_CLOSE_REPLY_DRAIN_SHUTDOWN_RESERVE_MS),
             );
-          } else {
-            try {
-              const activeWorkDrain = await eagerLifecycleRuntime.waitForGatewayActiveWork(
-                Math.max(0, SHUTDOWN_TIMEOUT_MS - RESTART_CLOSE_REPLY_DRAIN_SHUTDOWN_RESERVE_MS),
-              );
-              if (!activeWorkDrain.drained) {
-                gatewayLog.warn(
-                  `gateway active-work drain timeout reached; proceeding with shutdown: ${activeWorkDrain.snapshot.blockers.map((blocker) => blocker.message).join("; ")}`,
-                );
-              }
-            } catch (err) {
+            if (!activeWorkDrain.drained) {
               gatewayLog.warn(
-                `gateway active-work drain failed; proceeding with shutdown: ${formatErrorMessage(err)}`,
+                `gateway active-work drain timeout reached; proceeding with shutdown: ${activeWorkDrain.snapshot.blockers.map((blocker) => blocker.message).join("; ")}`,
               );
             }
+          } catch (err) {
+            gatewayLog.warn(
+              `gateway active-work drain failed; proceeding with shutdown: ${formatErrorMessage(err)}`,
+            );
           }
         }
 

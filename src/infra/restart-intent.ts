@@ -78,7 +78,7 @@ export function writeGatewayRestartIntentSync(opts: {
   });
 }
 
-export function writeGatewayStopIntentSync(opts: {
+function writeGatewayStopIntentSync(opts: {
   env?: NodeJS.ProcessEnv;
   targetPid?: number;
 }): boolean {
@@ -90,6 +90,24 @@ export function writeGatewayStopIntentSync(opts: {
     force: 1,
     waitMs: null,
   });
+}
+
+export async function runWithGatewayStopIntent<T>(
+  opts: { env?: NodeJS.ProcessEnv; force?: boolean; targetPid?: number },
+  mutate: () => Promise<T>,
+): Promise<T> {
+  // Persist before the supervisor mutation; only a successful signal should leave
+  // the PID-bound intent for the target process to consume during SIGTERM handling.
+  const wroteStopIntent =
+    Boolean(opts.force) && writeGatewayStopIntentSync({ env: opts.env, targetPid: opts.targetPid });
+  try {
+    return await mutate();
+  } catch (err) {
+    if (wroteStopIntent) {
+      clearGatewayRestartIntentSync(opts.env);
+    }
+    throw err;
+  }
 }
 
 function writeGatewayLifecycleIntentSync(opts: {
