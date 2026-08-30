@@ -69,4 +69,3 @@ if [[ -n "${github_output}" ]]; then
     echo "version=${vercel_version}"
   } >> "${github_output}"
 fi
-

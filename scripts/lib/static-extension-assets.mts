@@ -368,4 +368,3 @@ export function copyStaticExtensionAssetsForPackage(
   }
   return copied.toSorted((left, right) => left.localeCompare(right));
 }
-

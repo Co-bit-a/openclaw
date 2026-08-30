@@ -383,4 +383,3 @@ export function copyBundledPluginMetadata(params: CopyMetadataParams = {}): void
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   copyBundledPluginMetadata();
 }
-

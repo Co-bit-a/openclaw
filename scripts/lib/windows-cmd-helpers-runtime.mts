@@ -42,4 +42,3 @@ export function resolveWindowsCmdExePath(env: NodeJS.ProcessEnv = process.env): 
   }
   return result;
 }
-

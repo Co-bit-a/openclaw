@@ -83,4 +83,3 @@ export function collectBundledPluginPackageDependencySpecs(bundledPluginsDir: st
 
   return specs;
 }
-

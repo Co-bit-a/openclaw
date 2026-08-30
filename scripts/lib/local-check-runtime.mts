@@ -303,4 +303,3 @@ function resolveHostResources(hostResources: Resources | undefined) {
       typeof os.availableParallelism === "function" ? os.availableParallelism() : os.cpus().length,
   };
 }
-

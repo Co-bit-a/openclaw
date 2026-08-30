@@ -739,4 +739,3 @@ export function runRuntimePostBuild(params: RuntimePostBuildParams = {}) {
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   runRuntimePostBuild();
 }
-

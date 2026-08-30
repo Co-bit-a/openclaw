@@ -19,4 +19,3 @@ const LOCAL_BUILD_METADATA_DIST_PATH_SET = new Set<string>(LOCAL_BUILD_METADATA_
 export function isLocalBuildMetadataDistPath(relativePath: string) {
   return LOCAL_BUILD_METADATA_DIST_PATH_SET.has(relativePath);
 }
-

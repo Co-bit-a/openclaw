@@ -47,4 +47,3 @@ export function listMissingPackageStaticAssetSources(plan: PluginStaticAssetPlan
     .filter((src) => !fs.existsSync(path.join(plan.repoRoot, src)))
     .toSorted((left, right) => left.localeCompare(right));
 }
-

@@ -363,4 +363,3 @@ export function stageBundledPluginRuntime(params: { cwd?: string; repoRoot?: str
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   stageBundledPluginRuntime();
 }
-

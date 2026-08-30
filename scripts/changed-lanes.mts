@@ -692,4 +692,3 @@ if (isDirectRun()) {
     printHuman(result);
   }
 }
-

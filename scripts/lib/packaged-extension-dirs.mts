@@ -12,4 +12,3 @@ export function collectExcludedPackagedExtensionDirs(rootPackageJson: { files?: 
   }
   return excluded;
 }
-

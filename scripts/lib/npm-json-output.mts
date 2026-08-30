@@ -24,4 +24,3 @@ export function resolveNpmJsonEntries(value: unknown): unknown[] {
   }
   return [value];
 }
-

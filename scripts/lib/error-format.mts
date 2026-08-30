@@ -31,4 +31,3 @@ export function toErrorObject(value: unknown, fallbackMessage: string): Error {
   }
   return error;
 }
-

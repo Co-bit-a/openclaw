@@ -57,4 +57,3 @@ export function validateReleasePublishParentRun(input: {
   repository: string;
   run: unknown;
 }): void;
-
