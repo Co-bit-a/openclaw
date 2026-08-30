@@ -110,6 +110,7 @@ export async function createInitialSubagentSession(params: {
   cfg: OpenClawConfig;
   targetAgentId: string;
   childSessionKey: string;
+  label?: string;
   incognito: boolean;
   requesterInternalKey: string;
   creationPolicy: Pick<Parameters<typeof buildSessionCreationStamp>[0], "actor" | "sandbox">;
@@ -168,6 +169,8 @@ export async function createInitialSubagentSession(params: {
       },
       {
         ...buildDirectChildSessionPatch(initialChildSessionPatch),
+        // Native spawn keeps agent RPC label semantics, not sessions.patch's uniqueness policy.
+        ...(params.label ? { label: params.label } : {}),
         ...(params.sessionPermissionPolicy
           ? {
               permissionMode: params.sessionPermissionPolicy.mode,

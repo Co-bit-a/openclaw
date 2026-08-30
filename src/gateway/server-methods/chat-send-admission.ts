@@ -414,6 +414,10 @@ export async function admitChatSend(params: {
       assertAllowed: () => assertChatWorkAdmissionAllowed(false),
       revalidateAllowed: () => assertChatWorkAdmissionAllowed(true),
       onInterrupt: () => {
+        // A lifecycle drain may follow Stop; it did not cause the first abort signal.
+        if (admittedRunAbort?.controller.signal.aborted) {
+          return;
+        }
         if (admittedRunAbort?.entry) {
           admittedRunAbort.entry.abortStopReason = "restart";
         }

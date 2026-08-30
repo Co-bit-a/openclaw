@@ -707,7 +707,8 @@ export function abortChatRunById(
       aborted: true,
       stopReason,
       ...(active.toolErrorSummary ? { toolErrorSummary: active.toolErrorSummary } : {}),
-      startedAt: active.startedAtMs,
+      // Pre-execution admission time is not an execution start.
+      startedAt: active.executionStarted === false ? undefined : active.startedAtMs,
       endedAt: Date.now(),
     },
   });

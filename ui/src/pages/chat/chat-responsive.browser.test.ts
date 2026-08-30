@@ -2879,26 +2879,27 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
       expect(await bubble.getByText("Media failed").count()).toBe(0);
 
       try {
-        const failedCard = cards.filter({ hasText: "settings.toml" });
-        await failedCard.scrollIntoViewIfNeeded();
-        const desktopStatusSpacing = await failedCard.evaluate((card) => {
-          const badge = card.querySelector<HTMLElement>(
-            ".chat-assistant-attachment-card__status-badge",
-          )!;
-          const reason = card.querySelector<HTMLElement>(
-            ".chat-assistant-attachment-card__status-reason",
-          )!;
-          const separator = card.querySelector<HTMLElement>(
-            ".chat-assistant-attachment-card__status-separator",
-          )!;
-          const badgeRect = badge.getBoundingClientRect();
-          const reasonRect = reason.getBoundingClientRect();
-          const separatorRect = separator.getBoundingClientRect();
-          return {
-            leftGap: separatorRect.left - badgeRect.right,
-            rightGap: reasonRect.left - separatorRect.right,
-          };
-        });
+        await cards.filter({ hasText: "settings.toml" }).scrollIntoViewIfNeeded();
+        const desktopStatusSpacing = await cards
+          .filter({ hasText: "settings.toml" })
+          .evaluate((card) => {
+            const badge = card.querySelector<HTMLElement>(
+              ".chat-assistant-attachment-card__status-badge",
+            )!;
+            const reason = card.querySelector<HTMLElement>(
+              ".chat-assistant-attachment-card__status-reason",
+            )!;
+            const separator = card.querySelector<HTMLElement>(
+              ".chat-assistant-attachment-card__status-separator",
+            )!;
+            const badgeRect = badge.getBoundingClientRect();
+            const reasonRect = reason.getBoundingClientRect();
+            const separatorRect = separator.getBoundingClientRect();
+            return {
+              leftGap: separatorRect.left - badgeRect.right,
+              rightGap: reasonRect.left - separatorRect.right,
+            };
+          });
         expect(desktopStatusSpacing.leftGap).toBeGreaterThan(4);
         expect(desktopStatusSpacing.rightGap).toBeGreaterThan(4);
         expect(Math.abs(desktopStatusSpacing.leftGap - desktopStatusSpacing.rightGap)).toBeLessThan(
@@ -2907,13 +2908,12 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
 
         for (const width of [320, 560]) {
           await page.setViewportSize({ width, height: 852 });
-          // Viewport emulation can precede the shell and chat's responsive updates.
-          // Materialize the virtual row before measuring its committed layout.
-          await page.locator(".shell--mobile-nav .chat-split-view--narrow").waitFor();
+          const failedCard = cards.filter({ hasText: "settings.toml" });
+          // The viewport ACK does not settle the retained pane's responsive geometry.
           await failedCard.scrollIntoViewIfNeeded();
           await waitForLayoutSettled(
             page,
-            ".chat-assistant-attachment-card, .chat-assistant-attachment-card__status-reason",
+            ".chat-main__conversation, .chat-assistant-attachment-card, .chat-assistant-attachment-card__status-reason",
           );
           const mobileStatusLayout = await failedCard.evaluate((card) => {
             const badge = card.querySelector<HTMLElement>(
