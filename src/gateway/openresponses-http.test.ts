@@ -106,12 +106,7 @@ async function writeGatewayConfig(config: Record<string, unknown>) {
   await fs.writeFile(configPath, JSON.stringify(config, null, 2), "utf-8");
 }
 
-async function postResponses(
-  port: number,
-  body: unknown,
-  headers?: Record<string, string>,
-  signal?: AbortSignal,
-) {
+async function postResponses(port: number, body: unknown, headers?: Record<string, string>) {
   const res = await fetch(`http://127.0.0.1:${port}/v1/responses`, {
     method: "POST",
     headers: {
@@ -120,7 +115,6 @@ async function postResponses(
       ...headers,
     },
     body: JSON.stringify(body),
-    ...(signal ? { signal } : {}),
   });
   return res;
 }
@@ -201,36 +195,6 @@ const WEATHER_TOOL = [
     type: "function",
     name: "get_weather",
     description: "Get weather",
-  },
-] as const;
-
-const STREAM_FAILURE_CASES = [
-  {
-    name: "a reserved client tool",
-    createError: () => createClientToolNameConflictError(["read"]),
-    tools: [{ type: "function", name: "read" }],
-    expectedCode: "invalid_request_error",
-    expectedMessage: "invalid tool configuration",
-  },
-  {
-    name: "a mapped provider failure",
-    createError: () =>
-      new FailoverError("The provider rejected the request.", {
-        reason: "format",
-        status: 400,
-        code: "decimal_above_max_value",
-        rawError: "Invalid top_p: expected a value less than or equal to 1.",
-      }),
-    tools: [],
-    expectedCode: "invalid_request_error",
-    expectedMessage: "Invalid top_p",
-  },
-  {
-    name: "an unmapped provider failure",
-    createError: () => new Error("provider failed"),
-    tools: [],
-    expectedCode: "api_error",
-    expectedMessage: "internal error",
   },
 ] as const;
 
@@ -1046,67 +1010,6 @@ describe("OpenResponses HTTP API (e2e)", () => {
     expect(json.error?.message).toContain("Invalid 'top_p'");
     expect(agentCommand).toHaveBeenCalledTimes(1);
   });
-
-  it.each(
-    STREAM_FAILURE_CASES.flatMap((failure) =>
-      [false, true].map((emitErrorLifecycle) => ({
-        name: failure.name,
-        createError: failure.createError,
-        tools: failure.tools,
-        expectedCode: failure.expectedCode,
-        expectedMessage: failure.expectedMessage,
-        emitErrorLifecycle,
-        label: `${failure.name} ${emitErrorLifecycle ? "after" : "without"} an error lifecycle`,
-      })),
-    ),
-  )(
-    "closes the response stream for $label without reporting completion",
-    async ({ createError, emitErrorLifecycle, expectedCode, expectedMessage, tools }) => {
-      const idleRootCount = getActiveGatewayRootWorkCount();
-      agentCommand.mockClear();
-      agentCommand.mockImplementationOnce((async (opts: unknown) => {
-        if (emitErrorLifecycle) {
-          const runId = (opts as { runId?: string }).runId;
-          if (!runId) {
-            throw new Error("expected a streaming response run ID");
-          }
-          emitAgentEvent({ runId, stream: "lifecycle", data: { phase: "error" } });
-        }
-        throw createError();
-      }) as never);
-
-      const res = await postResponses(
-        enabledPort,
-        {
-          stream: true,
-          model: "openclaw",
-          input: "hi",
-          tools,
-        },
-        undefined,
-        AbortSignal.timeout(5_000),
-      );
-      expect(res.status).toBe(200);
-
-      const events = parseSseEvents(await res.text());
-      const failedEvents = events.filter((event) => event.event === "response.failed");
-      expect(failedEvents).toHaveLength(1);
-      expect(events.filter((event) => event.event === "response.completed")).toHaveLength(0);
-      expect(events.filter((event) => event.data === "[DONE]")).toHaveLength(1);
-      expect(events.at(-1)?.data).toBe("[DONE]");
-
-      const failedResponse = (
-        parseSseData(findSseEvent(events, "response.failed")) as {
-          response?: { status?: string; error?: { code?: string; message?: string } };
-        }
-      ).response;
-      expect(failedResponse?.status).toBe("failed");
-      expect(failedResponse?.error?.code).toBe(expectedCode);
-      expect(failedResponse?.error?.message).toContain(expectedMessage);
-      expect(agentCommand).toHaveBeenCalledTimes(1);
-      await vi.waitFor(() => expect(getActiveGatewayRootWorkCount()).toBe(idleRootCount));
-    },
-  );
 
   it("accepts write-scoped and admin-scoped HTTP callers", async () => {
     const port = enabledPort;
