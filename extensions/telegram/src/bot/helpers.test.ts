@@ -723,7 +723,7 @@ describe("isBinaryContent", () => {
 describe("getTelegramTextParts — binary caption filtering (#66647)", () => {
   it("keeps rich-message-only updates out of canonical text", () => {
     const result = getTelegramTextParts({
-      rich_message: { blocks: [{ type: "paragraph" }] },
+      rich_message: { blocks: [{ type: "paragraph", text: "" }] },
     });
 
     expect(result).toEqual({ text: "", entities: [] });
@@ -732,7 +732,7 @@ describe("getTelegramTextParts — binary caption filtering (#66647)", () => {
   it("keeps normal text when Telegram also supplies a rich message", () => {
     const result = getTelegramTextParts({
       text: "normal text",
-      rich_message: { blocks: [{ type: "paragraph" }] },
+      rich_message: { blocks: [{ type: "paragraph", text: "" }] },
     });
 
     expect(result).toEqual({ text: "normal text", entities: [] });
