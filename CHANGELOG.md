@@ -26,7 +26,7 @@ Docs: https://docs.openclaw.ai
 
 ### Complete contribution record
 
-This audited record covers the complete v2026.7.1-2..7e44a94d99b73f666fd1112cc7b53bc4cd54e4c8 history: 133 merged PRs. The generation manifest also supplies direct commits as editorial input; the grouped notes above prioritize user impact.
+This audited record covers the complete v2026.7.1-2..6a5b91407034bafb30fc6e6949d43e0cb34b0ab5 history: 131 merged PRs. The generation manifest also supplies direct commits as editorial input; the grouped notes above prioritize user impact.
 
 #### Pull requests
 
@@ -50,8 +50,6 @@ This audited record covers the complete v2026.7.1-2..7e44a94d99b73f666fd1112cc7b
 - **PR #102881** fix(gateway): reject disallowed browser Origin before accepting auth.mode=none on HTTP (#102834). Thanks @wangyan2026 and @yetval.
 - **PR #101469** fix(hooks): bound HOOK.md reads during hook install validation. Thanks @cxbAsDev.
 - **PR #103562** fix(discord): retry reply session init conflicts to prevent silent message loss. Related #102381. Thanks @cxbAsDev and @zuofengboss.
-- **PR #113514** fix(gateway): streamed OpenAI-compatible requests fail with a spurious draining error. Thanks @Leviathan256.
-- **PR #113629** fix(gateway): close failed Responses streams without false completion.
 - **PR #113700** fix: recover outbound messages after the correct retry delay.
 - **PR #113703** fix: preserve distinct imported CLI session messages.
 - **PR #113697** fix: repair tool-call transcripts when plugins block results.
