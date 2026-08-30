@@ -1,5 +1,6 @@
 // Covers plugin config state normalization and reset behavior.
 import { describe, expect, it, vi } from "vitest";
+import * as bundledChannelCatalog from "../channels/bundled-channel-catalog-read.js";
 import {
   createPluginActivationSource,
   normalizePluginsConfig,
@@ -403,21 +404,28 @@ describe("resolveEffectivePluginActivationState", () => {
     });
   });
 
-  it("marks bundled default-enabled plugins as default activation", () => {
-    expect(
-      resolveEffectivePluginActivationState({
-        id: "openai",
-        origin: "bundled",
-        config: normalizePluginsConfig({}),
-        enabledByDefault: true,
-      }),
-    ).toEqual({
-      enabled: true,
-      activated: true,
-      explicitlyEnabled: false,
-      source: "default",
-      reason: "bundled default enablement",
-    });
+  it("resolves default activation without discovering unconfigured channels", () => {
+    const catalog = vi.spyOn(bundledChannelCatalog, "listBundledChannelCatalogEntries");
+    try {
+      expect(
+        resolveEffectivePluginActivationState({
+          id: "openai",
+          origin: "bundled",
+          config: normalizePluginsConfig({}),
+          rootConfig: {},
+          enabledByDefault: true,
+        }),
+      ).toEqual({
+        enabled: true,
+        activated: true,
+        explicitlyEnabled: false,
+        source: "default",
+        reason: "bundled default enablement",
+      });
+      expect(catalog).not.toHaveBeenCalled();
+    } finally {
+      catalog.mockRestore();
+    }
   });
 
   it("keeps allowlists authoritative over explicit bundled plugin enablement", () => {
