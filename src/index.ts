@@ -10,6 +10,7 @@ import {
 } from "./cli/failure-output.js";
 import { isJsonOutputModeActive } from "./cli/json-output-mode.js";
 import { runCliWithExitFinalization } from "./cli/one-shot-exit.js";
+import { withCliProcessScope } from "./cli/runtime-cleanup-scope.js";
 import { installDistEsmResolveFastPath } from "./entry.esm-resolve-fast-path.js";
 import { tryHandleRootVersionFastPath } from "./entry.version-fast-path.js";
 import { formatUncaughtError } from "./infra/errors.js";
@@ -62,7 +63,7 @@ async function loadLegacyCliDeps(): Promise<LegacyCliDeps> {
   return { runCli };
 }
 
-// Legacy direct file entrypoint only. Package root exports now live in library.ts.
+// Legacy executable bridge, also exported for callers that retain their own process lifecycle.
 export async function runLegacyCliEntry(
   argv: string[] = process.argv,
   deps?: LegacyCliDeps,
@@ -143,11 +144,13 @@ if (isMain && !handledRootVersion) {
   });
 
   void runCliWithExitFinalization({
-    run: async () =>
-      await runLegacyCliEntry(process.argv, undefined, {
-        // Finalizers and process-exit hooks can still emit diagnostics after runCli settles.
-        retainConsoleRoutingUntilProcessExit: true,
-      }),
+    run: () =>
+      withCliProcessScope(() =>
+        runLegacyCliEntry(process.argv, undefined, {
+          // Finalizers and process-exit hooks can still emit diagnostics after runCli settles.
+          retainConsoleRoutingUntilProcessExit: true,
+        }),
+      ),
     onError: (err) => {
       if (isJsonOutputModeActive(process.argv)) {
         defaultRuntime.writeJson(formatCliJsonFailure(err));
