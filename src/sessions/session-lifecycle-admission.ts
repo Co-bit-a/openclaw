@@ -491,6 +491,7 @@ export async function beginSessionWorkAdmission(params: {
         resolveReleased();
       };
       const lease: SessionWorkAdmissionLease = {
+        isActive: () => !released,
         createHandoff: () => {
           if (released) {
             throw new Error("cannot hand off a released session work admission");
