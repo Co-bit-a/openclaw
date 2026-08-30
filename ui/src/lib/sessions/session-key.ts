@@ -222,14 +222,9 @@ export function resolveUiCanonicalMainSessionKey(
   });
 }
 
-function normalizeUiSessionEventKey(
+export function prepareUiSessionKeyNormalizer(
   host: Pick<UiSessionDefaultsHost, "agentsList" | "hello">,
-  sessionKey: string | undefined | null,
-): string | null {
-  const raw = normalizeOptionalString(sessionKey);
-  if (!raw) {
-    return null;
-  }
+) {
   const mainKey = resolveUiConfiguredMainKey(host);
   const defaultAgentId = resolveUiDefaultAgentId(host);
   const canonicalMain = resolveUiCanonicalMainSessionKey(host);
@@ -244,15 +239,18 @@ function normalizeUiSessionEventKey(
       .filter((value): value is string => Boolean(value))
       .map(normalizeSessionKeyForUiComparison),
   );
-  const normalized = normalizeSessionKeyForUiComparison(raw);
-  return aliases.has(normalized) ? normalizeSessionKeyForUiComparison(canonicalMain) : normalized;
+  const normalizedMain = normalizeSessionKeyForUiComparison(canonicalMain);
+  return (sessionKey: string | undefined | null): string => {
+    const normalized = normalizeSessionKeyForUiComparison(sessionKey);
+    return aliases.has(normalized) ? normalizedMain : normalized;
+  };
 }
 
 export function canonicalUiSessionKeyForPersistence(
   host: Pick<UiSessionDefaultsHost, "agentsList" | "hello">,
   sessionKey: string | undefined | null,
 ): string {
-  return normalizeUiSessionEventKey(host, sessionKey) ?? "";
+  return prepareUiSessionKeyNormalizer(host)(sessionKey);
 }
 
 function areUiSessionKeysEquivalentForHost(
@@ -260,8 +258,9 @@ function areUiSessionKeysEquivalentForHost(
   left: string | undefined | null,
   right: string | undefined | null,
 ): boolean {
-  const normalizedLeft = normalizeUiSessionEventKey(host, left);
-  const normalizedRight = normalizeUiSessionEventKey(host, right);
+  const normalize = prepareUiSessionKeyNormalizer(host);
+  const normalizedLeft = normalize(left);
+  const normalizedRight = normalize(right);
   return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
 }
 
