@@ -673,8 +673,8 @@ describe("commands registry", () => {
     ).toBe("/help@some_other_bot");
   });
 
-  it("keeps unregistered dock underscore aliases unchanged", () => {
-    expect(normalizeCommandBody("/dock_telegram")).toBe("/dock_telegram");
+  it("keeps unregistered underscore aliases unchanged", () => {
+    expect(normalizeCommandBody("/unknown_command")).toBe("/unknown_command");
   });
 });
 

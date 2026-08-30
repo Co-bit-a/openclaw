@@ -1,6 +1,6 @@
 /**
  * Conversation-binding key resolver shared by plugin commands and reply/session actions.
- * Binding keys must use canonical routing ids so focus/unfocus targets survive aliases and hints.
+ * Binding keys must use canonical routing ids so binding controls survive aliases and hints.
  */
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {

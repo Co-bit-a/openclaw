@@ -4,7 +4,6 @@ export const commandHandlerOrder = [
   // Plugin text commands must win before built-in auth routing handles /login.
   "plugin",
   "login",
-  "dock",
   "btw",
   "bash",
   "activation",

@@ -58,7 +58,7 @@ export function shouldForwardModelCommandToServer(rawArgs: string): boolean {
 }
 
 /** Defines one command with normalized aliases, scope, and argument parsing defaults. */
-export function defineChatCommand(command: DefineChatCommandInput): ChatCommandDefinition {
+function defineChatCommand(command: DefineChatCommandInput): ChatCommandDefinition {
   const aliases = (command.textAliases ?? (command.textAlias ? [command.textAlias] : []))
     .map((alias) => alias.trim())
     .filter(Boolean);
@@ -107,7 +107,7 @@ function registerAlias(commands: ChatCommandDefinition[], key: string, ...aliase
 }
 
 /** Validates command registry uniqueness and text/native surface invariants. */
-export function assertCommandRegistry(commands: ChatCommandDefinition[]): void {
+function assertCommandRegistry(commands: ChatCommandDefinition[]): void {
   const keys = new Set<string>();
   const nativeNames = new Set<string>();
   const textAliases = new Set<string>();
@@ -390,12 +390,14 @@ export function buildBuiltinChatCommands(
     defineBuiltinCommand("whoami", "Show your sender id.", "status", "power"),
     defineBuiltinCommand(
       "session",
-      "Manage session-level settings (for example /session idle).",
+      "Manage conversation bindings and session lifecycle settings.",
       "session",
       "power",
       {
         args: [
-          defineCommandArgument("action", "idle | max-age", { choices: ["idle", "max-age"] }),
+          defineCommandArgument("action", "idle | max-age | unbind", {
+            choices: ["idle", "max-age", "unbind"],
+          }),
           defineCommandArgument("value", "Duration (24h, 90m) or off", { captureRemaining: true }),
         ],
         argsMenu: "auto",
@@ -446,25 +448,6 @@ export function buildBuiltinChatCommands(
       ],
       argsMenu: "auto",
     }),
-    defineBuiltinCommand(
-      "focus",
-      "Bind this thread (Discord) or topic/conversation (Telegram) to a session target.",
-      "management",
-      "power",
-      {
-        args: [
-          defineCommandArgument("target", "Subagent label/index or session key/id/label", {
-            captureRemaining: true,
-          }),
-        ],
-      },
-    ),
-    defineBuiltinCommand(
-      "unfocus",
-      "Remove the current thread (Discord) or topic/conversation (Telegram) binding.",
-      "management",
-      "power",
-    ),
     defineBuiltinCommand(
       "agents",
       "List thread-bound agents for this session.",

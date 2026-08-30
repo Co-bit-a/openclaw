@@ -8,7 +8,6 @@ import { handleCompactCommand } from "./commands-compact.js";
 import { handleConfigCommand, handleDebugCommand } from "./commands-config.js";
 import { handleContextCommand } from "./commands-context-command.js";
 import { handleDiagnosticsCommand } from "./commands-diagnostics.js";
-import { handleDockCommand } from "./commands-dock.js";
 import { handleGoalCommand } from "./commands-goal.js";
 import { commandHandlerOrder, type CommandHandlerId } from "./commands-handlers.order.js";
 import {
@@ -60,7 +59,6 @@ const commandHandlersById = {
   context: handleContextCommand,
   debug: handleDebugCommand,
   diagnostics: handleDiagnosticsCommand,
-  dock: handleDockCommand,
   "export-session": handleExportSessionCommand,
   "export-trajectory": handleExportTrajectoryCommand,
   fast: handleFastCommand,
