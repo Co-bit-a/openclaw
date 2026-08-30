@@ -130,7 +130,7 @@ async function readSourceFacts() {
       references: matches.filter((term) => tokens?.has(term)),
     };
   };
-  const facts: (ReturnType<typeof parseFacts> | null)[] = new Array(files.length);
+  const facts: (ReturnType<typeof parseFacts> | null)[] = files.map(() => null);
   const failures: unknown[] = [];
   let next = 0;
   await Promise.all(

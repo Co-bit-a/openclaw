@@ -46,9 +46,9 @@ export function createVitestWorkerRun() {
         requireProcessTreeExit: process.platform !== "win32",
         signal: compilerAbort.signal,
       }).then(
-        (code) => {
+        (exitCode) => {
           compilerJoined = true;
-          return code;
+          return exitCode;
         },
         (error: unknown) => {
           // Managed abort rejects only after verified termination. Uncertain

@@ -82,6 +82,7 @@ async function waitForDead(pid: number, timeoutMs: number) {
 describe("prepare-extension-package-boundary-artifacts", () => {
   it.for(["package-boundary", "all"])(
     "prunes only obsolete native declarations after success and repairs a failed partial emit (%s)",
+    { timeout: 30_000 },
     async (mode, { signal }) => {
       return fixture.run(async () => {
         const root = fs.realpathSync(createTempDir("native-preparer-"));
@@ -221,7 +222,6 @@ describe("prepare-extension-package-boundary-artifacts", () => {
         expect(fs.statSync(path.join(root, output, "src/renamed.d.ts")).mtimeMs).toBe(unchanged);
       });
     },
-    30_000,
   );
   it("prefixes each completed line and flushes the trailing partial line", () => {
     let output = "";

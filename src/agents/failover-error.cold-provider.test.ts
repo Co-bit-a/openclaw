@@ -3,10 +3,8 @@ import {
   resolvePluginActivationInputs,
   withActivatedPluginIds,
 } from "../plugins/activation-context.js";
-import {
-  getReusableCachedPluginRegistry,
-  resolvePluginRegistryLoadCacheKey,
-} from "../plugins/loader-cache.js";
+import { resolvePluginRegistryLoadCacheKey } from "../plugins/loader-cache.js";
+import { pluginLoaderCacheState } from "../plugins/registry-lifecycle.js";
 import { getActivePluginRegistry } from "../plugins/runtime.js";
 import { coerceToFailoverError } from "./failover-error.js";
 
@@ -24,7 +22,7 @@ it("completes real cold Anthropic registration and its failover hook", () => {
     rawConfig: withActivatedPluginIds({ pluginIds: ["anthropic"] }),
     applyAutoEnable: true,
   });
-  const registry = getReusableCachedPluginRegistry(
+  const registry = pluginLoaderCacheState.get(
     resolvePluginRegistryLoadCacheKey({
       config: activation.config,
       activationSourceConfig: activation.activationSourceConfig,
