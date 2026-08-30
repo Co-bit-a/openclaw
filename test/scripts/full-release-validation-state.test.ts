@@ -300,8 +300,12 @@ describe("full release execution plan", () => {
     expect(validateReleaseExecutionPlanArtifact(artifact)).toMatchObject(waiver);
     const changed = { ...artifact, targetVersion: "2026.8.2" };
     expect(() => validateReleaseExecutionPlanArtifact(changed)).toThrow(/digest/u);
-    changed.sha256 = releaseExecutionPlanSha256(changed);
-    expect(() => validateReleaseExecutionPlanArtifact(changed)).toThrow(/Telegram waiver/u);
+    expect(() =>
+      validateReleaseExecutionPlanArtifact({
+        ...changed,
+        sha256: releaseExecutionPlanSha256(changed),
+      }),
+    ).toThrow(/Telegram waiver/u);
     expect(() => validateReleaseExecutionPlanArtifact(artifact, { telegramWaiver: "" })).toThrow(
       /Telegram waiver/u,
     );
