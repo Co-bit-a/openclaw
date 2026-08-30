@@ -15,7 +15,7 @@ import type {
   SidebarSessionMutationScope,
   SidebarSessionPatch,
 } from "./app-sidebar-session-types.ts";
-import { requestCloudWorkerStop } from "./cloud-worker-stop.ts";
+import { requestCloudWorkerStop } from "./cloud-worker-stop.runtime.ts";
 import { showConfirmDialog, type ConfirmDialogSkipPreference } from "./confirm-dialog.ts";
 import type { SessionMenuAction } from "./session-menu.ts";
 import {

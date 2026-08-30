@@ -4,10 +4,8 @@ import type { GatewaySessionRow } from "../../api/types.ts";
 import type { ApplicationGatewaySnapshot } from "../../app/context.ts";
 import { hasOperatorAdminAccess } from "../../app/operator-access.ts";
 import type { ApplicationPlacementStartup } from "../../app/session-placement-startup.ts";
-import {
-  requestCloudWorkerStop,
-  resolveCloudWorkerStopAction,
-} from "../../components/cloud-worker-stop.ts";
+import { requestCloudWorkerStop } from "../../components/cloud-worker-stop.runtime.ts";
+import { resolveCloudWorkerStopAction } from "../../components/cloud-worker-stop.ts";
 import { t } from "../../i18n/index.ts";
 import { readSessionMethodAccess } from "../../lib/session-method-access.ts";
 import { parseAgentSessionKey } from "../../lib/sessions/session-key.ts";

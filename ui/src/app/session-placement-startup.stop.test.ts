@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
-import { requestCloudWorkerStop } from "../components/cloud-worker-stop.ts";
+import { requestCloudWorkerStop } from "../components/cloud-worker-stop.runtime.ts";
 import {
+  pauseSessionPlacementRecovery,
   readSessionPlacementRecovery,
   writeSessionPlacementRecovery,
 } from "../lib/sessions/session-placement-recovery.ts";
@@ -12,6 +13,8 @@ import {
   flushStartupMicrotasks,
 } from "./session-placement-startup.test-support.ts";
 import { createApplicationPlacementStartup } from "./session-placement-startup.ts";
+
+const recoveryAccess = { readSessionPlacementRecovery, pauseSessionPlacementRecovery };
 
 beforeEach(() => sessionStorage.clear());
 afterEach(() => {
@@ -259,7 +262,7 @@ describe("cloud Stop owns the held initial turn", () => {
         Object.assign(gateway, { connectionRevision: gateway.connectionRevision + 1 });
         Object.assign(gateway.connection, { gatewayUrl: "ws://replacement.example" });
       }
-      startup.pause(input.recovery.sessionKey, "stopped");
+      startup.pause(input.recovery.sessionKey, "stopped", recoveryAccess);
       expect(
         readSessionPlacementRecovery(
           input.recovery.gatewayUrl,
@@ -291,7 +294,7 @@ describe("cloud Stop owns the held initial turn", () => {
         } else {
           expect(writeSessionPlacementRecovery(replacementRecovery)).toBe(true);
         }
-        startup.pause(input.recovery.sessionKey, "stopped");
+        startup.pause(input.recovery.sessionKey, "stopped", recoveryAccess);
         dispatch.resolve({ placement: createStartupPlacement("active", 1) });
         await flushStartupMicrotasks();
         expect(request.mock.calls.filter(([method]) => method === "sessions.send")).toHaveLength(0);
