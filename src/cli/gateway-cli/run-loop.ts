@@ -49,6 +49,7 @@ type GatewayRunSignalRequest = {
   signal: string;
   restartReason?: string;
   restartIntent?: GatewayRestartIntent;
+  forceStop?: boolean;
 };
 
 type GatewayLifecycleRuntimeModule = typeof import("./lifecycle.runtime.js");
@@ -526,6 +527,7 @@ export async function runGatewayLoop(params: {
   const runAcceptedRequest = (acceptedRequest: GatewayRunSignalRequest) => {
     const { action, restartIntent } = acceptedRequest;
     const isRestart = action === "restart";
+    const forceStop = !isRestart && acceptedRequest.forceStop === true;
     if (isRestart) {
       activeRestartRequest = acceptedRequest;
     }
@@ -670,19 +672,34 @@ export async function runGatewayLoop(params: {
         } else {
           // Keep all process-owned work alive without spending the shutdown reserve
           // that server teardown and the supervisor watchdog need.
-          try {
-            const activeWorkDrain = await eagerLifecycleRuntime.waitForGatewayActiveWork(
-              Math.max(0, SHUTDOWN_TIMEOUT_MS - RESTART_CLOSE_REPLY_DRAIN_SHUTDOWN_RESERVE_MS),
+          if (forceStop) {
+            const snapshot = eagerLifecycleRuntime.createGatewayActiveWorkSnapshot();
+            if (snapshot.counts.embeddedRuns > 0) {
+              // A lifecycle stop is recoverable on the next Gateway start, so use the
+              // established restart abort reason instead of classifying it as user cancellation.
+              eagerLifecycleRuntime.abortEmbeddedAgentRun(undefined, {
+                mode: "compacting",
+                reason: "restart",
+              });
+            }
+            gatewayLog.warn(
+              `forced stop requested; skipping active work drain: ${snapshot.blockers.map((blocker) => blocker.message).join("; ") || "no active work"}`,
             );
-            if (!activeWorkDrain.drained) {
+          } else {
+            try {
+              const activeWorkDrain = await eagerLifecycleRuntime.waitForGatewayActiveWork(
+                Math.max(0, SHUTDOWN_TIMEOUT_MS - RESTART_CLOSE_REPLY_DRAIN_SHUTDOWN_RESERVE_MS),
+              );
+              if (!activeWorkDrain.drained) {
+                gatewayLog.warn(
+                  `gateway active-work drain timeout reached; proceeding with shutdown: ${activeWorkDrain.snapshot.blockers.map((blocker) => blocker.message).join("; ")}`,
+                );
+              }
+            } catch (err) {
               gatewayLog.warn(
-                `gateway active-work drain timeout reached; proceeding with shutdown: ${activeWorkDrain.snapshot.blockers.map((blocker) => blocker.message).join("; ")}`,
+                `gateway active-work drain failed; proceeding with shutdown: ${formatErrorMessage(err)}`,
               );
             }
-          } catch (err) {
-            gatewayLog.warn(
-              `gateway active-work drain failed; proceeding with shutdown: ${formatErrorMessage(err)}`,
-            );
           }
         }
 
@@ -724,7 +741,9 @@ export async function runGatewayLoop(params: {
           armForceExitTimer(SHUTDOWN_TIMEOUT_MS);
         }
         const closeDrainTimeoutMs = !isRestart
-          ? null
+          ? forceStop
+            ? 0
+            : null
           : restartDrainTimeoutMs === undefined
             ? SHUTDOWN_TIMEOUT_MS - RESTART_CLOSE_REPLY_DRAIN_SHUTDOWN_RESERVE_MS
             : Math.max(0, (restartDrainDeadlineAt ?? Date.now()) - Date.now());
@@ -780,8 +799,9 @@ export async function runGatewayLoop(params: {
     signal: string,
     restartReason?: string,
     restartIntent?: GatewayRestartIntent,
+    forceStop?: boolean,
   ) => {
-    const acceptedRequest = { action, signal, restartReason, restartIntent };
+    const acceptedRequest = { action, signal, restartReason, restartIntent, forceStop };
     if (shuttingDown) {
       const currentRestartRequest = pendingStartupRequest ?? activeRestartRequest;
       if (
@@ -862,14 +882,13 @@ export async function runGatewayLoop(params: {
     // "received <signal>; ..." line, so an info pre-log would double up.
     gatewayLog.debug("signal SIGTERM received");
     void (async () => {
-      const { consumeGatewayRestartIntentPayloadSync } = await loadGatewayLifecycleRuntimeModule();
-      const restartIntent = consumeGatewayRestartIntentPayloadSync();
-      request(
-        restartIntent ? "restart" : "stop",
-        "SIGTERM",
-        restartIntent?.reason,
-        restartIntent ?? undefined,
-      );
+      const { consumeGatewayLifecycleIntentSync } = await loadGatewayLifecycleRuntimeModule();
+      const lifecycleIntent = consumeGatewayLifecycleIntentSync();
+      if (lifecycleIntent?.kind === "restart") {
+        request("restart", "SIGTERM", lifecycleIntent.intent.reason, lifecycleIntent.intent);
+        return;
+      }
+      request("stop", "SIGTERM", undefined, undefined, lifecycleIntent?.kind === "stop");
     })().catch((err: unknown) => {
       gatewayLog.error(`failed to handle SIGTERM: ${String(err)}`);
       request("stop", "SIGTERM");

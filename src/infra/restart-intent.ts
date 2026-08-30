@@ -1,4 +1,4 @@
-// Persists short-lived gateway restart intent for supervisor SIGTERM handoff.
+// Persists short-lived Gateway lifecycle intent for supervisor signal handoff.
 import { asPositiveSafeInteger } from "@openclaw/normalization-core/number-coercion";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -28,6 +28,17 @@ type GatewayRestartIntentPayload = {
   waitMs?: number;
 };
 
+type GatewayStopIntentPayload = {
+  kind: "gateway-stop";
+  pid: number;
+  createdAt: number;
+  force: true;
+};
+
+export type GatewayLifecycleIntent =
+  | { kind: "restart"; intent: GatewayRestartIntent }
+  | { kind: "stop"; force: true };
+
 export type GatewayRestartIntent = {
   reason?: string;
   force?: boolean;
@@ -51,19 +62,50 @@ export function writeGatewayRestartIntentSync(opts: {
   intent?: GatewayRestartIntent;
   reason?: string;
 }): boolean {
+  const waitMs =
+    typeof opts.intent?.waitMs === "number" &&
+    Number.isFinite(opts.intent.waitMs) &&
+    opts.intent.waitMs >= 0
+      ? Math.floor(opts.intent.waitMs)
+      : null;
+  return writeGatewayLifecycleIntentSync({
+    env: opts.env,
+    targetPid: opts.targetPid,
+    kind: "gateway-restart",
+    reason: normalizeRestartIntentReason(opts.reason ?? opts.intent?.reason) ?? null,
+    force: opts.intent?.force ? 1 : null,
+    waitMs,
+  });
+}
+
+export function writeGatewayStopIntentSync(opts: {
+  env?: NodeJS.ProcessEnv;
+  targetPid?: number;
+}): boolean {
+  return writeGatewayLifecycleIntentSync({
+    env: opts.env,
+    targetPid: opts.targetPid,
+    kind: "gateway-stop",
+    reason: null,
+    force: 1,
+    waitMs: null,
+  });
+}
+
+function writeGatewayLifecycleIntentSync(opts: {
+  env?: NodeJS.ProcessEnv;
+  targetPid?: number;
+  kind: "gateway-restart" | "gateway-stop";
+  reason: string | null;
+  force: number | null;
+  waitMs: number | null;
+}): boolean {
   const targetPid = asPositiveSafeInteger(opts.targetPid) ?? null;
   if (targetPid === null) {
     return false;
   }
   const env = opts.env ?? process.env;
   try {
-    const reason = normalizeRestartIntentReason(opts.reason ?? opts.intent?.reason);
-    const waitMs =
-      typeof opts.intent?.waitMs === "number" &&
-      Number.isFinite(opts.intent.waitMs) &&
-      opts.intent.waitMs >= 0
-        ? Math.floor(opts.intent.waitMs)
-        : null;
     const createdAt = Date.now();
     runOpenClawStateWriteTransaction(
       ({ db }) => {
@@ -74,12 +116,12 @@ export function writeGatewayRestartIntentSync(opts: {
             .insertInto("gateway_restart_intent")
             .values({
               intent_key: GATEWAY_RESTART_INTENT_KEY,
-              kind: "gateway-restart",
+              kind: opts.kind,
               pid: targetPid,
               created_at: createdAt,
-              reason: reason ?? null,
-              force: opts.intent?.force ? 1 : null,
-              wait_ms: waitMs,
+              reason: opts.reason,
+              force: opts.force,
+              wait_ms: opts.waitMs,
               updated_at_ms: createdAt,
             })
             .onConflict((conflict) =>
@@ -99,7 +141,9 @@ export function writeGatewayRestartIntentSync(opts: {
     );
     return true;
   } catch (err) {
-    restartLog.warn(`failed to write gateway restart intent: ${String(err)}`);
+    restartLog.warn(
+      `failed to write gateway ${opts.kind === "gateway-restart" ? "restart" : "stop"} intent: ${String(err)}`,
+    );
     return false;
   }
 }
@@ -121,9 +165,9 @@ export function clearGatewayRestartIntentSync(env: NodeJS.ProcessEnv = process.e
   } catch {}
 }
 
-function readGatewayRestartIntentPayloadSync(
+function readGatewayLifecycleIntentPayloadSync(
   env: NodeJS.ProcessEnv,
-): GatewayRestartIntentPayload | null {
+): GatewayRestartIntentPayload | GatewayStopIntentPayload | null {
   try {
     const { db } = openOpenClawStateDatabase({ env });
     const stateDb = getNodeSqliteKysely<GatewayRestartIntentDatabase>(db);
@@ -135,7 +179,7 @@ function readGatewayRestartIntentPayloadSync(
         .where("intent_key", "=", GATEWAY_RESTART_INTENT_KEY),
     );
     if (
-      parsed?.kind === "gateway-restart" &&
+      parsed &&
       typeof parsed.pid === "number" &&
       Number.isFinite(parsed.pid) &&
       typeof parsed.created_at === "number" &&
@@ -148,6 +192,22 @@ function readGatewayRestartIntentPayloadSync(
           Number.isFinite(parsed.wait_ms) &&
           parsed.wait_ms >= 0))
     ) {
+      if (
+        parsed.kind === "gateway-stop" &&
+        parsed.force === 1 &&
+        parsed.reason === null &&
+        parsed.wait_ms === null
+      ) {
+        return {
+          kind: "gateway-stop",
+          pid: parsed.pid,
+          createdAt: parsed.created_at,
+          force: true,
+        };
+      }
+      if (parsed.kind !== "gateway-restart") {
+        return null;
+      }
       const reason = normalizeRestartIntentReason(parsed.reason ?? undefined);
       return {
         kind: "gateway-restart",
@@ -168,22 +228,33 @@ export function consumeGatewayRestartIntentPayloadSync(
   env: NodeJS.ProcessEnv = process.env,
   now = Date.now(),
 ): GatewayRestartIntent | null {
-  const payload = readGatewayRestartIntentPayloadSync(env);
+  const lifecycleIntent = consumeGatewayLifecycleIntentSync(env, now);
+  return lifecycleIntent?.kind === "restart" ? lifecycleIntent.intent : null;
+}
+
+export function consumeGatewayLifecycleIntentSync(
+  env: NodeJS.ProcessEnv = process.env,
+  now = Date.now(),
+): GatewayLifecycleIntent | null {
+  const payload = readGatewayLifecycleIntentPayloadSync(env);
   clearGatewayRestartIntentSync(env);
-  if (!payload) {
-    return null;
-  }
-  if (payload.pid !== process.pid) {
+  if (!payload || payload.pid !== process.pid) {
     return null;
   }
   const ageMs = now - payload.createdAt;
   if (ageMs < 0 || ageMs > GATEWAY_RESTART_INTENT_TTL_MS) {
     return null;
   }
+  if (payload.kind === "gateway-stop") {
+    return { kind: "stop", force: true };
+  }
   return {
-    ...(payload.reason ? { reason: payload.reason } : {}),
-    ...(payload.force ? { force: true } : {}),
-    ...(typeof payload.waitMs === "number" ? { waitMs: payload.waitMs } : {}),
+    kind: "restart",
+    intent: {
+      ...(payload.reason ? { reason: payload.reason } : {}),
+      ...(payload.force ? { force: true } : {}),
+      ...(typeof payload.waitMs === "number" ? { waitMs: payload.waitMs } : {}),
+    },
   };
 }
 

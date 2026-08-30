@@ -35,6 +35,7 @@ import {
   clearGatewayRestartIntentSync,
   type GatewayRestartIntent,
   writeGatewayRestartIntentSync,
+  writeGatewayStopIntentSync,
 } from "../../infra/restart-intent.js";
 import { resolveGatewayRestartDeferralTimeoutMs } from "../../infra/restart.js";
 import { defaultRuntime } from "../../runtime.js";
@@ -182,16 +183,28 @@ async function stopGatewayWithoutServiceManager(
   port: number,
   lockOwnerPid: number | undefined,
   serviceContext?: Parameters<typeof resolveGatewayServiceProbeHosts>[0],
+  force = false,
 ) {
-  const managed = await handleSystemScopeSystemdGateway("stop");
-  if (managed) {
-    return managed;
-  }
   const listenerPids = resolveVerifiedGatewayListenerPids(port);
   // Listener discovery needs lsof, which minimal containers omit. The gateway
   // lock already names the verified owner of this port, so signal it instead of
   // reporting the gateway as not running while it keeps serving.
   const pids = listenerPids.length > 0 ? listenerPids : lockOwnerPid ? [lockOwnerPid] : [];
+  // The single persisted lifecycle slot is PID-bound. If discovery is ambiguous,
+  // preserve an ordinary stop instead of granting force to the wrong listener.
+  const wroteStopIntent =
+    force && pids.length === 1 && writeGatewayStopIntentSync({ targetPid: pids[0] });
+  try {
+    const managed = await handleSystemScopeSystemdGateway("stop");
+    if (managed) {
+      return managed;
+    }
+  } catch (err) {
+    if (wroteStopIntent) {
+      clearGatewayRestartIntentSync();
+    }
+    throw err;
+  }
   if (pids.length === 0) {
     const probeHosts = await resolveGatewayServiceProbeHosts(serviceContext ?? {});
     const portUsage = await probePortUsage(port, probeHosts);
@@ -205,7 +218,14 @@ async function stopGatewayWithoutServiceManager(
     return null;
   }
   for (const pid of pids) {
-    signalVerifiedGatewayPidSync(pid, "SIGTERM");
+    try {
+      signalVerifiedGatewayPidSync(pid, "SIGTERM");
+    } catch (err) {
+      if (wroteStopIntent) {
+        clearGatewayRestartIntentSync();
+      }
+      throw err;
+    }
     appendGatewayLifecycleAudit({
       action: "stop",
       source: "cli",
@@ -511,11 +531,20 @@ export async function runDaemonStop(opts: DaemonLifecycleOptions = {}) {
         if (runtime?.status === "running") {
           // systemd can run a disabled unit with Restart=always. Stop it through
           // systemctl so a process-level SIGTERM cannot trigger a respawn.
-          await service.stop({
-            env: process.env,
-            stdout,
-            onMutation: createGatewayLifecycleMutationAudit({ action: "stop" }),
-          });
+          const wroteStopIntent =
+            Boolean(opts.force) && writeGatewayStopIntentSync({ targetPid: runtime.pid });
+          try {
+            await service.stop({
+              env: process.env,
+              stdout,
+              onMutation: createGatewayLifecycleMutationAudit({ action: "stop" }),
+            });
+          } catch (err) {
+            if (wroteStopIntent) {
+              clearGatewayRestartIntentSync();
+            }
+            throw err;
+          }
           return { result: "stopped" };
         }
       }
@@ -525,7 +554,12 @@ export async function runDaemonStop(opts: DaemonLifecycleOptions = {}) {
       const lock = await readActiveGatewayLockIdentity().catch(() => undefined);
       const ctx = lock ? null : await resolveGatewayLifecycleContext(service).catch(() => null);
       const port = lock?.port ?? ctx?.port ?? (await resolveGatewayConfigPorts()).fallback;
-      return await stopGatewayWithoutServiceManager(port, lock?.pid, ctx ?? undefined);
+      return await stopGatewayWithoutServiceManager(
+        port,
+        lock?.pid,
+        ctx ?? undefined,
+        Boolean(opts.force),
+      );
     },
   });
 }

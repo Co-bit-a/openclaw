@@ -20,6 +20,7 @@ export {
   scheduleGatewaySigusr1Restart,
 } from "../../infra/restart.js";
 export {
+  consumeGatewayLifecycleIntentSync,
   consumeGatewayRestartIntentPayloadSync,
   consumeGatewayRestartIntentSync,
 } from "../../infra/restart-intent.js";

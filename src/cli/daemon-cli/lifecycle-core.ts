@@ -22,6 +22,7 @@ import {
   clearGatewayRestartIntentSync,
   type GatewayRestartIntent,
   writeGatewayRestartIntentSync,
+  writeGatewayStopIntentSync,
 } from "../../infra/restart-intent.js";
 import { isWSL } from "../../infra/wsl.js";
 import { defaultRuntime } from "../../runtime.js";
@@ -369,6 +370,26 @@ export async function runServiceStop(params: {
     serviceNoun: params.serviceNoun,
     action: "stop",
   });
+  let wroteStopIntent = false;
+  const stopService = async () => {
+    if (params.serviceNoun === "Gateway" && params.opts?.force) {
+      const runtime = await params.service.readRuntime(process.env).catch(() => null);
+      wroteStopIntent = writeGatewayStopIntentSync({ targetPid: runtime?.pid });
+    }
+    try {
+      await params.service.stop({
+        env: process.env,
+        stdout,
+        disable: params.opts?.disable,
+        onMutation: gatewayStopAudit,
+      });
+    } catch (err) {
+      if (wroteStopIntent) {
+        clearGatewayRestartIntentSync();
+      }
+      throw err;
+    }
+  };
 
   const loaded = await resolveServiceLoadedOrFail({
     serviceNoun: params.serviceNoun,
@@ -388,12 +409,7 @@ export async function runServiceStop(params: {
   if (!loaded) {
     if (params.stopWhenNotLoaded) {
       try {
-        await params.service.stop({
-          env: process.env,
-          stdout,
-          disable: params.opts?.disable,
-          onMutation: gatewayStopAudit,
-        });
+        await stopService();
       } catch (err) {
         fail(`${params.serviceNoun} stop failed: ${String(err)}`);
         return;
@@ -436,12 +452,7 @@ export async function runServiceStop(params: {
     return;
   }
   try {
-    await params.service.stop({
-      env: process.env,
-      stdout,
-      disable: params.opts?.disable,
-      onMutation: gatewayStopAudit,
-    });
+    await stopService();
   } catch (err) {
     fail(`${params.serviceNoun} stop failed: ${String(err)}`);
     return;

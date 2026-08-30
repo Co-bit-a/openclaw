@@ -22,6 +22,7 @@ const loadConfig = vi.fn<() => OpenClawConfig>(() => ({
   },
 }));
 const writeGatewayRestartIntentSync = vi.fn();
+const writeGatewayStopIntentSync = vi.fn();
 const clearGatewayRestartIntentSync = vi.fn();
 const appendGatewayLifecycleAudit = vi.fn();
 const MISSING_SERVICE_PROGRAM = "/openclaw-test-missing-runtime/node";
@@ -53,6 +54,7 @@ vi.mock("../../runtime.js", () => ({
 vi.mock("../../infra/restart-intent.js", () => ({
   clearGatewayRestartIntentSync: () => clearGatewayRestartIntentSync(),
   writeGatewayRestartIntentSync: (opts: unknown) => writeGatewayRestartIntentSync(opts),
+  writeGatewayStopIntentSync: (opts: unknown) => writeGatewayStopIntentSync(opts),
 }));
 
 vi.mock("./lifecycle-audit.js", () => ({
@@ -158,6 +160,7 @@ describe("runServiceRestart token drift", () => {
     });
     resetLifecycleServiceMocks();
     writeGatewayRestartIntentSync.mockClear();
+    writeGatewayStopIntentSync.mockReset().mockReturnValue(true);
     clearGatewayRestartIntentSync.mockClear();
     service.readCommand.mockResolvedValue({
       programArguments: [],
@@ -570,17 +573,41 @@ describe("runServiceRestart token drift", () => {
     expect(service.stop).not.toHaveBeenCalled();
   });
 
+  it("writes a forced stop intent before the managed service sends SIGTERM", async () => {
+    service.readRuntime.mockResolvedValue({ status: "running", pid: 1234 });
+
+    await runServiceStop({
+      serviceNoun: "Gateway",
+      service,
+      opts: { json: true, force: true },
+    });
+
+    expect(writeGatewayStopIntentSync).toHaveBeenCalledWith({ targetPid: 1234 });
+    expect(service.stop).toHaveBeenCalledOnce();
+    expect(clearGatewayRestartIntentSync).not.toHaveBeenCalled();
+  });
+
+  it("keeps ordinary managed stops cooperative", async () => {
+    service.readRuntime.mockResolvedValue({ status: "running", pid: 1234 });
+
+    await runServiceStop({ serviceNoun: "Gateway", service, opts: { json: true } });
+
+    expect(writeGatewayStopIntentSync).not.toHaveBeenCalled();
+    expect(service.stop).toHaveBeenCalledOnce();
+  });
+
   it("runs a requested managed stop even when the service is not loaded", async () => {
     const onNotLoaded = vi.fn(async () => ({
       result: "stopped" as const,
       message: "Gateway stop signal sent to unmanaged process on port 18789: 4200.",
     }));
     service.isLoaded.mockResolvedValue(false);
+    service.readRuntime.mockResolvedValue({ status: "running", pid: 1234 });
 
     await runServiceStop({
       serviceNoun: "Gateway",
       service,
-      opts: { json: true, disable: true },
+      opts: { json: true, disable: true, force: true },
       stopWhenNotLoaded: true,
       onNotLoaded,
     });
@@ -592,6 +619,7 @@ describe("runServiceRestart token drift", () => {
     const [stopOptions] = service.stop.mock.calls[0] ?? [];
     expect(stopOptions?.env).toBe(process.env);
     expect(stopOptions?.disable).toBe(true);
+    expect(writeGatewayStopIntentSync).toHaveBeenCalledWith({ targetPid: 1234 });
     expect(onNotLoaded).not.toHaveBeenCalled();
   });
 

@@ -36,6 +36,7 @@ const resolveGatewayPort = vi.hoisted(() => vi.fn((_cfg?: unknown, _env?: unknow
 const findVerifiedGatewayListenerPidsOnPortSync = vi.fn<(port: number) => number[]>(() => []);
 const signalVerifiedGatewayPidSync = vi.fn<(pid: number, signal: "SIGTERM" | "SIGUSR1") => void>();
 const writeGatewayRestartIntentSync = vi.fn();
+const writeGatewayStopIntentSync = vi.fn();
 const clearGatewayRestartIntentSync = vi.fn();
 const resolveGatewayServiceProbeHosts = vi.fn(
   async (_params: { env?: Record<string, string | undefined>; command?: unknown }) =>
@@ -122,6 +123,7 @@ vi.mock("../../infra/gateway-lock.js", () => {
 
 vi.mock("../../infra/restart-intent.js", () => ({
   writeGatewayRestartIntentSync: (params: unknown) => writeGatewayRestartIntentSync(params),
+  writeGatewayStopIntentSync: (params: unknown) => writeGatewayStopIntentSync(params),
   clearGatewayRestartIntentSync: () => clearGatewayRestartIntentSync(),
 }));
 
@@ -257,6 +259,7 @@ describe("runDaemonRestart health checks", () => {
     findVerifiedGatewayListenerPidsOnPortSync.mockReset();
     signalVerifiedGatewayPidSync.mockReset().mockImplementation(() => {});
     writeGatewayRestartIntentSync.mockReset().mockReturnValue(true);
+    writeGatewayStopIntentSync.mockReset().mockReturnValue(true);
     clearGatewayRestartIntentSync.mockReset();
     formatGatewayPidList.mockReset().mockImplementation((pids) => pids.join(", "));
     probeGateway.mockReset();
@@ -742,6 +745,7 @@ describe("runDaemonRestart health checks", () => {
     await runUnmanagedStop({ json: true, force: true });
 
     expect(signalVerifiedGatewayPidSync).toHaveBeenCalledWith(4200, "SIGTERM");
+    expect(writeGatewayStopIntentSync).toHaveBeenCalledWith({ targetPid: 4200 });
   });
 
   it("routes macOS disable stops through the service manager when not loaded", async () => {
@@ -767,6 +771,16 @@ describe("runDaemonRestart health checks", () => {
       expect.objectContaining({ env: process.env, stdout: process.stdout }),
     );
     expect(findVerifiedGatewayListenerPidsOnPortSync).not.toHaveBeenCalled();
+  });
+
+  it("writes a forced intent before stopping a running disabled systemd unit", async () => {
+    vi.spyOn(process, "platform", "get").mockReturnValue("linux");
+    service.readRuntime.mockResolvedValue({ status: "running", pid: 4200 });
+
+    await runUnmanagedStop({ json: true, force: true });
+
+    expect(writeGatewayStopIntentSync).toHaveBeenCalledWith({ targetPid: 4200 });
+    expect(service.stop).toHaveBeenCalledOnce();
   });
 
   it("skips gateway port resolution on stop when the service manager handles the stop", async () => {
@@ -1077,6 +1091,19 @@ describe("runDaemonRestart health checks", () => {
     await expect(runUnmanagedStop()).resolves.toEqual(
       expect.objectContaining({ result: "stopped" }),
     );
+    expect(stopSystemdService).toHaveBeenCalled();
+    expect(signalVerifiedGatewayPidSync).not.toHaveBeenCalled();
+  });
+
+  it("writes a forced intent before a system-scope systemd stop", async () => {
+    mockSystemdScope("openclaw-gateway.service");
+    findVerifiedGatewayListenerPidsOnPortSync.mockReturnValue([4200]);
+
+    await expect(runUnmanagedStop({ json: true, force: true })).resolves.toEqual(
+      expect.objectContaining({ result: "stopped" }),
+    );
+
+    expect(writeGatewayStopIntentSync).toHaveBeenCalledWith({ targetPid: 4200 });
     expect(stopSystemdService).toHaveBeenCalled();
     expect(signalVerifiedGatewayPidSync).not.toHaveBeenCalled();
   });

@@ -201,6 +201,8 @@ openclaw gateway stop
 
 Use `openclaw gateway restart` for restarts. Do not chain `openclaw gateway stop` and `openclaw gateway start` as a restart substitute.
 
+By default, `gateway stop` waits for active Gateway work to finish. Use `openclaw gateway stop --force` to skip that wait while still allowing the Gateway to close plugins, databases, and other owned resources normally. Non-interactive shells also require `--force`.
+
 On macOS, `gateway stop` uses `launchctl bootout` by default. This removes the LaunchAgent from the current boot session without persisting a disable, so KeepAlive auto-recovery still works after unexpected crashes and `gateway start` re-enables cleanly. To persistently suppress auto-respawn across reboots, pass `--disable`: `openclaw gateway stop --disable`.
 
 LaunchAgent labels are `ai.openclaw.gateway` (default) or `ai.openclaw.<profile>` (named profile). `openclaw doctor` audits and repairs service config drift.

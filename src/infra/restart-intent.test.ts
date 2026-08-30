@@ -14,9 +14,11 @@ import {
   getNodeSqliteKysely,
 } from "./kysely-sync.js";
 import {
+  consumeGatewayLifecycleIntentSync,
   consumeGatewayRestartIntentPayloadSync,
   consumeGatewayRestartIntentSync,
   writeGatewayRestartIntentSync,
+  writeGatewayStopIntentSync,
 } from "./restart-intent.js";
 
 const tempDirs: string[] = [];
@@ -182,5 +184,20 @@ describe("gateway restart intent", () => {
       reason: "second",
     });
     expect(consumeGatewayRestartIntentPayloadSync(env)).toEqual({ reason: "second" });
+  });
+
+  it("round-trips a PID-bound forced stop intent", () => {
+    const env = createIntentEnv();
+
+    expect(writeGatewayStopIntentSync({ env, targetPid: process.pid })).toBe(true);
+    expect(readIntentRow(env)).toMatchObject({
+      kind: "gateway-stop",
+      pid: process.pid,
+      force: 1,
+      reason: null,
+      wait_ms: null,
+    });
+    expect(consumeGatewayLifecycleIntentSync(env)).toEqual({ kind: "stop", force: true });
+    expect(readIntentRow(env)).toBeUndefined();
   });
 });

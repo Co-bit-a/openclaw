@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GatewayServer } from "../../gateway/server-public.js";
 import type { GatewayBonjourBeacon } from "../../infra/bonjour-discovery.js";
 import type { GatewayActiveWorkSnapshot } from "../../infra/gateway-active-work.js";
-import type { GatewayRestartIntent } from "../../infra/restart-intent.js";
+import type { GatewayLifecycleIntent, GatewayRestartIntent } from "../../infra/restart-intent.js";
 import { SUPERVISOR_HINT_ENV_VARS } from "../../infra/supervisor-markers.js";
 import { resolveGlobalMap } from "../../shared/global-singleton.js";
 import {
@@ -19,6 +19,10 @@ const acquireGatewayLock = vi.fn(async (_opts?: { port?: number }) => ({
 const consumeGatewayRestartIntentPayloadSync = vi.fn<
   () => { reason?: string; force?: boolean; waitMs?: number } | null
 >(() => null);
+const consumeGatewayLifecycleIntentSync = vi.fn<() => GatewayLifecycleIntent | null>(() => {
+  const intent = consumeGatewayRestartIntentPayloadSync();
+  return intent ? ({ kind: "restart", intent } as const) : null;
+});
 const consumeGatewaySigusr1RestartIntent = vi.fn<() => GatewayRestartIntent | null>(() => null);
 const managedUpdateSuccessorOwner = {
   kind: "managed-update-handoff",
@@ -190,6 +194,7 @@ vi.mock("../../infra/restart.js", async (importOriginal) => {
 });
 
 vi.mock("../../infra/restart-intent.js", () => ({
+  consumeGatewayLifecycleIntentSync: () => consumeGatewayLifecycleIntentSync(),
   consumeGatewayRestartIntentPayloadSync: () => consumeGatewayRestartIntentPayloadSync(),
   consumeGatewayRestartIntentSync: () => consumeGatewayRestartIntentSync(),
 }));
@@ -494,6 +499,13 @@ beforeEach(async () => {
   // must not shift a stale supervisor or respawn decision into the next case.
   consumeGatewaySigusr1RestartIntent.mockReset();
   consumeGatewaySigusr1RestartIntent.mockReturnValue(null);
+  consumeGatewayRestartIntentPayloadSync.mockReset();
+  consumeGatewayRestartIntentPayloadSync.mockReturnValue(null);
+  consumeGatewayLifecycleIntentSync.mockReset();
+  consumeGatewayLifecycleIntentSync.mockImplementation(() => {
+    const intent = consumeGatewayRestartIntentPayloadSync();
+    return intent ? ({ kind: "restart", intent } as const) : null;
+  });
   peekGatewaySigusr1RestartReason.mockReset();
   peekGatewaySigusr1RestartReason.mockReturnValue(undefined);
   restartGatewayProcessWithFreshPid.mockReset();
@@ -794,6 +806,37 @@ describe("runGatewayLoop", () => {
       });
     },
   );
+
+  it("forces SIGTERM shutdown without waiting for active work", async () => {
+    vi.clearAllMocks();
+    consumeGatewayLifecycleIntentSync.mockReturnValueOnce({ kind: "stop", force: true });
+    const activeSnapshot = createActiveWorkSnapshot({ embeddedRuns: 1, activeTasks: 1 }, [
+      { kind: "embedded-run", count: 1, message: "1 active embedded run(s)" },
+      { kind: "task", count: 1, message: "1 active background task run(s)" },
+    ]);
+    createGatewayActiveWorkSnapshot.mockReturnValue(activeSnapshot);
+
+    await withIsolatedSignals(async ({ captureSignal }) => {
+      const { close, exited } = await createSignaledLoopHarness();
+
+      captureSignal("SIGTERM")();
+
+      await expect(exited).resolves.toBe(0);
+      expect(waitForGatewayActiveWork).not.toHaveBeenCalled();
+      expect(abortEmbeddedAgentRun).toHaveBeenCalledWith(undefined, {
+        mode: "compacting",
+        reason: "restart",
+      });
+      expect(gatewayLog.warn).toHaveBeenCalledWith(
+        "forced stop requested; skipping active work drain: 1 active embedded run(s); 1 active background task run(s)",
+      );
+      expect(close).toHaveBeenCalledWith({
+        reason: "gateway stopping",
+        restartExpectedMs: null,
+        drainTimeoutMs: 0,
+      });
+    });
+  });
 
   it("continues direct shutdown when the bounded active-work drain times out", async () => {
     vi.clearAllMocks();

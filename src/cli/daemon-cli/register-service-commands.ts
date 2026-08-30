@@ -111,7 +111,7 @@ export function addGatewayServiceCommands(parent: Command, opts?: { statusDescri
   parent
     .command("stop")
     .description("Stop the Gateway service (launchd/systemd/schtasks)")
-    .option("--force", "Allow stop from a non-interactive shell", false)
+    .option("--force", "Stop immediately without waiting for active Gateway work", false)
     .option("--json", "Output JSON", false)
     .option(
       "--disable",
