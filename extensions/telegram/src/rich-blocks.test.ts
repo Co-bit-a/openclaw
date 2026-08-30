@@ -1,4 +1,4 @@
-// Telegram rich-blocks unit tests for Bot API 10.2 InputRichBlock emission.
+// Telegram rich-blocks unit tests for Bot API 10.3 InputRichBlock emission.
 import stringWidth from "string-width";
 import { describe, expect, it } from "vitest";
 import { markdownToTelegramHtml } from "./format.js";
