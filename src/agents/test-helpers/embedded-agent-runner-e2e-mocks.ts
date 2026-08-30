@@ -172,6 +172,8 @@ export function installEmbeddedRunnerBaseE2eMocks(options?: {
     attachModelProviderRuntimePluginHandle: (model: unknown) => model,
     prepareProviderExtraParams: vi.fn(() => undefined),
     resolveProviderExtraParamsForTransport: vi.fn(() => undefined),
+    resolveProviderHookPlugin: vi.fn(() => undefined),
+    resolveProviderPluginsForHooks: vi.fn(() => []),
     resolveProviderRuntimePlugin: vi.fn(() => undefined),
     resolveProviderRuntimePluginHandle: vi.fn((params: object) => params),
     wrapProviderStreamFn: vi.fn(() => undefined),
