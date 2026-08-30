@@ -301,16 +301,12 @@ async function executeSessionPatchMutations(params: {
               try {
                 // Keep every resolver candidate for queued alias revalidation. Label
                 // uniqueness needs only the requested label's owners, not the full store.
-                const selectedSessionKeys = Array.from(
-                  new Set(
-                    group.flatMap((target) => [
-                      target.key,
-                      target.canonicalKey,
-                      ...target.initialStoreKeys,
-                    ]),
-                  ),
-                );
-                const label = parseSessionLabel(first.fullPatch.label);
+                const selectedSessionKeys = group.flatMap((target) => [
+                  target.key,
+                  target.canonicalKey,
+                  ...target.initialStoreKeys,
+                ]);
+                const requestedLabel = parseSessionLabel(first.fullPatch.label);
                 const worktreeTransitions = new Map<
                   number,
                   Awaited<ReturnType<typeof prepareSessionPatchWorktreeTransition>>
@@ -323,7 +319,7 @@ async function executeSessionPatchMutations(params: {
                   },
                   agentId: first.targetAgentId,
                   sessionKeys: selectedSessionKeys,
-                  ...(label.ok ? { includeLabelOwners: label.label } : {}),
+                  ...(requestedLabel.ok ? { includeLabelOwners: requestedLabel.label } : {}),
                   storePath: first.storePath,
                   skipMaintenance: true,
                   update: async (entries) => {
