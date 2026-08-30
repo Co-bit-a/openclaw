@@ -285,7 +285,7 @@ describe("AppSidebar session mutation feedback", () => {
     await waitForFast(() => expect(request).toHaveBeenCalledOnce());
     expect(context.placementStartup.pause).toHaveBeenCalledExactlyOnceWith(
       "agent:main:a",
-      "Cloud worker stop requested. Review the initial message before retrying.",
+      "Worker stop requested. Review the initial message before retrying.",
       { readSessionPlacementRecovery, pauseSessionPlacementRecovery },
     );
     expect(context.placementStartup.pause).toHaveBeenCalledBefore(request);
@@ -329,7 +329,7 @@ describe("AppSidebar session mutation feedback", () => {
     await waitForFast(() => expect(request).toHaveBeenCalledOnce());
     expect(context.placementStartup.pause).toHaveBeenCalledExactlyOnceWith(
       "agent:main:a",
-      "Cloud worker stop requested. Review the initial message before retrying.",
+      "Worker stop requested. Review the initial message before retrying.",
       { readSessionPlacementRecovery, pauseSessionPlacementRecovery },
     );
     expect(context.placementStartup.pause).toHaveBeenCalledBefore(request);
