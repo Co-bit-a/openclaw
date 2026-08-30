@@ -634,7 +634,7 @@ export async function spawnSubagentDirect(
               throw error;
             }
             await emitSpawnLifecycleHooks(gatewayRunId);
-          });
+          }, "subagents:spawn");
         },
         onStartFailure: async (error) => {
           if (error instanceof GatewayDrainingError) {

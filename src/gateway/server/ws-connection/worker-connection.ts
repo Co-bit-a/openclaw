@@ -358,7 +358,7 @@ export function attachWorkerWsMessageHandler(params: WorkerWsMessageHandlerParam
       // queue so heartbeats, cancellation, and terminal ACKs keep flowing. A
       // socket is only a response transport: disconnecting it must not cancel
       // an admitted durable operation after external effects may have begun.
-      void runWithGatewayIndependentRootWorkContinuation(() => dispatch())
+      void runWithGatewayIndependentRootWorkContinuation(() => dispatch(), "worker:dispatch")
         .catch(() => {
           respond(false, undefined, workerProtocolError("gateway-unavailable"));
         })

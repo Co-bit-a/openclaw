@@ -91,7 +91,7 @@ export function scheduleChatDashboardSessionTitle(params: {
     } finally {
       admission.release();
     }
-  }).catch((err: unknown) => {
+  }, "chat-send:background").catch((err: unknown) => {
     params.context.logGateway.warn(
       `dashboard session title generation failed: ${formatForLog(err)}`,
     );
