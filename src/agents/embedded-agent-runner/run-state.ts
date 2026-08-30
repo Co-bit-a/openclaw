@@ -21,7 +21,6 @@ import {
 } from "../../infra/agent-events.js";
 import type { DiagnosticEmbeddedRunOwner } from "../../logging/diagnostic-run-activity.js";
 import { resolveGlobalSingleton } from "../../shared/global-singleton.js";
-import type { EmbeddedRunAttemptParams } from "./run/types.js";
 
 /**
  * Shared process state for embedded-agent runs, queues, and snapshots.
@@ -41,7 +40,7 @@ export type EmbeddedAgentQueueHandle = {
   /** Exact authority of the concrete provider/model attempt behind this handle. */
   toolAuthorityFingerprint?: string;
   /** Shared outer-run owner survives an intentional native-turn replacement. */
-  permissionChange?: EmbeddedRunAttemptParams["permissionChange"];
+  permissionChangeOwner?: object;
   /** Fences prior tools, revokes their approvals, then acknowledges installed permissions. */
   applyPermissionMode?: (
     mode: SessionPermissionMode | null,
