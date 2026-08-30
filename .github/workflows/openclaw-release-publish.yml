@@ -975,7 +975,7 @@ jobs:
       - name: Setup Node environment
         uses: ./.github/actions/setup-node-env
         with:
-          cache-mode: restore
+          use-actions-cache: "true"
           install-deps: "false"
           install-bun: "false"
 
