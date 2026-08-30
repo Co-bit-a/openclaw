@@ -3553,7 +3553,7 @@ describe("scripts/test-projects changed-target routing", () => {
 });
 
 describe("test selector native source facts", () => {
-  it("reads complete large files without inherited loader hooks or reparsing cached imports", () => {
+  it("reads complete files without installed packages, inherited hooks, or reparsing cached imports", () => {
     withTinyFileTree(
       {
         "large.mts": `${"// padding\n".repeat(220_000)}export type {\n Value\n } from "./barrel.js";\nimport(\n "./dynamic.mjs"\n);\nconst fixture = "scripts/tool.mts";`,
@@ -3563,6 +3563,22 @@ describe("test selector native source facts", () => {
           { file: "large.mts", parseImports: true },
           { file: "deleted.ts", parseImports: true },
         ];
+        const expectedFacts = {
+          imports: ["./barrel.js", "./dynamic.mjs"],
+          reexports: ["./barrel.js"],
+          matches: ["scripts/tool.mts", "scripts/tool"],
+          references: ["scripts/tool.mts"],
+        };
+        const scanner = path.join(fs.realpathSync(cwd), "test-selector-source-facts.mts");
+        fs.copyFileSync(path.resolve("scripts/lib/test-selector-source-facts.mts"), scanner);
+        const native = spawnSync(process.execPath, [scanner], {
+          cwd,
+          input: JSON.stringify({ files, terms: ["scripts/tool.mts", "scripts/tool"] }),
+          encoding: "utf8",
+        });
+        expect(native.error).toBeUndefined();
+        expect(native.status, native.stderr).toBe(0);
+        expect(JSON.parse(native.stdout)).toEqual([expectedFacts, null]);
         vi.stubEnv(
           "NODE_OPTIONS",
           "--import=data:text/javascript,throw%20Error('inherited-loader')",
@@ -3575,15 +3591,7 @@ describe("test selector native source facts", () => {
               ["scripts/tool.mts", "scripts/tool"],
               16 * 1024 * 1024,
             ),
-          ).toEqual([
-            {
-              file: "large.mts",
-              imports: ["./barrel.js", "./dynamic.mjs"],
-              reexports: ["./barrel.js"],
-              matches: ["scripts/tool.mts", "scripts/tool"],
-              references: ["scripts/tool.mts"],
-            },
-          ]);
+          ).toEqual([{ file: "large.mts", ...expectedFacts }]);
           expect(
             readTestSelectorSourceFacts(
               cwd,

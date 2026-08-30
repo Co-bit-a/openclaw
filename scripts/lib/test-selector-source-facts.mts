@@ -1,29 +1,44 @@
-// Native read boundary for synchronous test selectors; no tsx or application imports.
+// Pre-install test selectors need a Node-only read boundary; no package or application imports.
 import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import pMap from "p-map";
-import { z } from "zod";
 
 const IMPORT_SPECIFIER_PATTERN =
   /\b(?:import|export)\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)/gu;
 const REEXPORT_SPECIFIER_PATTERN =
   /\bexport\s+(?:type\s+)?(?:\*\s+(?:as\s+\w+\s+)?from\s+|[^"']+?\s+from\s+)["']([^"']+)["']/gu;
-const requestSchema = z.object({
-  files: z.array(z.object({ file: z.string(), parseImports: z.boolean() })),
-  terms: z.array(z.string()),
-});
-const factsSchema = z.object({
-  imports: z.array(z.string()),
-  reexports: z.array(z.string()),
-  matches: z.array(z.string()),
-  references: z.array(z.string()),
-});
+type SourceFile = { file: string; parseImports: boolean };
+
+function parseStrings(value: unknown): string[] {
+  if (!Array.isArray(value) || !value.every((item: unknown) => typeof item === "string")) {
+    throw new Error("Expected a string array in test selector source scan");
+  }
+  return value;
+}
+
+function parseFacts(value: unknown) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("imports" in value) ||
+    !("reexports" in value) ||
+    !("matches" in value) ||
+    !("references" in value)
+  ) {
+    throw new Error("Invalid test selector source facts");
+  }
+  return {
+    imports: parseStrings(value.imports),
+    reexports: parseStrings(value.reexports),
+    matches: parseStrings(value.matches),
+    references: parseStrings(value.references),
+  };
+}
 
 /** Acquires complete JS-parsed facts with bounded asynchronous reads, joining one native child. */
 export function readTestSelectorSourceFacts(
   cwd: string,
-  files: z.infer<typeof requestSchema>["files"],
+  files: SourceFile[],
   terms: string[],
   maxBuffer: number,
 ) {
@@ -49,11 +64,13 @@ export function readTestSelectorSourceFacts(
     );
   }
   // Position is the file identity: require every requested row, including unreadable files.
-  return z
-    .array(factsSchema.nullable())
-    .length(files.length)
-    .parse(JSON.parse(result.stdout))
-    .flatMap((facts, index) => (facts ? [{ file: files[index]!.file, ...facts }] : []));
+  const rows: unknown = JSON.parse(result.stdout);
+  if (!Array.isArray(rows) || rows.length !== files.length) {
+    throw new Error("Invalid test selector source scan row count");
+  }
+  return rows.flatMap((row: unknown, index) =>
+    row === null ? [] : [{ file: files[index]!.file, ...parseFacts(row) }],
+  );
 }
 
 async function readSourceFacts() {
@@ -62,39 +79,76 @@ async function readSourceFacts() {
   for await (const chunk of process.stdin) {
     input += chunk;
   }
-  const { files, terms } = requestSchema.parse(JSON.parse(input));
-  const facts = await pMap(
-    files,
-    async ({ file, parseImports }) => {
-      let source: string;
-      try {
-        source = await readFile(file, "utf8");
-      } catch {
-        // Git inventories include deleted files; preserve the selector's unreadable-file behavior.
-        return null;
+  const request: unknown = JSON.parse(input);
+  if (
+    !request ||
+    typeof request !== "object" ||
+    !("files" in request) ||
+    !Array.isArray(request.files) ||
+    !("terms" in request)
+  ) {
+    throw new Error("Invalid test selector source scan request");
+  }
+  const files = request.files.map((value: unknown): SourceFile => {
+    if (
+      !value ||
+      typeof value !== "object" ||
+      !("file" in value) ||
+      typeof value.file !== "string" ||
+      !("parseImports" in value) ||
+      typeof value.parseImports !== "boolean"
+    ) {
+      throw new Error("Invalid test selector source scan file");
+    }
+    return { file: value.file, parseImports: value.parseImports };
+  });
+  const terms = parseStrings(request.terms);
+  const readFacts = async ({ file, parseImports }: SourceFile) => {
+    let source: string;
+    try {
+      source = await readFile(file, "utf8");
+    } catch {
+      // Git inventories include deleted files; preserve the selector's unreadable-file behavior.
+      return null;
+    }
+    const specifiers = (pattern: RegExp) =>
+      parseImports
+        ? [
+            ...new Set(
+              [...source.matchAll(pattern)]
+                .map((match) => match[1] ?? match[2] ?? "")
+                .filter((specifier) => specifier.startsWith(".")),
+            ),
+          ]
+        : [];
+    const matches = terms.filter((term) => source.includes(term));
+    const tokens = matches.length > 0 ? new Set(source.match(/[A-Za-z0-9_.@+/-]{4,}/gu)) : null;
+    return {
+      imports: specifiers(IMPORT_SPECIFIER_PATTERN),
+      reexports: specifiers(REEXPORT_SPECIFIER_PATTERN),
+      matches,
+      references: matches.filter((term) => tokens?.has(term)),
+    };
+  };
+  const facts: (ReturnType<typeof parseFacts> | null)[] = new Array(files.length);
+  const failures: unknown[] = [];
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(32, files.length) }, async () => {
+      while (next < files.length) {
+        const index = next++;
+        try {
+          facts[index] = await readFacts(files[index]!);
+        } catch (error) {
+          failures.push(error);
+        }
       }
-      const specifiers = (pattern: RegExp) =>
-        parseImports
-          ? [
-              ...new Set(
-                [...source.matchAll(pattern)]
-                  .map((match) => match[1] ?? match[2] ?? "")
-                  .filter((specifier) => specifier.startsWith(".")),
-              ),
-            ]
-          : [];
-      const matches = terms.filter((term) => source.includes(term));
-      const tokens = matches.length > 0 ? new Set(source.match(/[A-Za-z0-9_.@+/-]{4,}/gu)) : null;
-      return {
-        imports: specifiers(IMPORT_SPECIFIER_PATTERN),
-        reexports: specifiers(REEXPORT_SPECIFIER_PATTERN),
-        matches,
-        references: matches.filter((term) => tokens?.has(term)),
-      };
-    },
-    { concurrency: 32, stopOnError: false },
+    }),
   );
-  // p-map joins every admitted read, including failures, before publishing any result.
+  // Join every read, including after a scan failure, before publishing or failing.
+  if (failures.length > 0) {
+    throw new AggregateError(failures, "Test selector source scan failed");
+  }
   process.stdout.write(JSON.stringify(facts));
 }
 
