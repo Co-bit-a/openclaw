@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import type { PluginLogger } from "openclaw/plugin-sdk/plugin-entry";
 import type { PluginStateKeyedStore } from "openclaw/plugin-sdk/plugin-state-runtime";
+import { isPrivateIpAddress } from "openclaw/plugin-sdk/ssrf-policy";
 
 const SETTINGS_KEY = "capture";
 const DEFAULT_PROFILE = "chrome";
@@ -41,6 +42,7 @@ type BrowserGateway = {
 };
 
 type BrowserTab = {
+  incognito?: unknown;
   targetId?: unknown;
   title?: unknown;
   url?: unknown;
@@ -52,6 +54,7 @@ export type BrowserCaptureSummary = {
   recordedTabs: number;
   duplicateTabs: number;
   failedTabs: number;
+  protectedTabs: number;
   skippedTabs: number;
   capturedAtMs: number;
   skipped?: "capture_in_progress";
@@ -87,20 +90,123 @@ function defaultSettings(now: () => number): BrowserCaptureSettings {
   };
 }
 
-function normalizeHttpUrl(raw: string): string | undefined {
+type BrowserUrlClassification =
+  | { kind: "capture"; url: string }
+  | { kind: "protected" }
+  | { kind: "ineligible" };
+
+function classifyHttpUrl(raw: string): BrowserUrlClassification {
   try {
     const url = new URL(raw);
     if (url.protocol !== "http:" && url.protocol !== "https:") {
-      return undefined;
+      return { kind: "ineligible" };
+    }
+    if (isSensitiveBrowserUrl(url)) {
+      return { kind: "protected" };
     }
     url.username = "";
     url.password = "";
     url.search = "";
     url.hash = "";
-    return url.toString();
+    return { kind: "capture", url: url.toString() };
   } catch {
-    return undefined;
+    return { kind: "ineligible" };
   }
+}
+
+const SENSITIVE_HOST_LABELS = new Set([
+  "account",
+  "accounts",
+  "auth",
+  "banking",
+  "brokerage",
+  "checkout",
+  "identity",
+  "inbox",
+  "login",
+  "payments",
+  "signin",
+  "sso",
+  "wallet",
+  "webmail",
+]);
+const SENSITIVE_PATH_SEGMENTS = new Set([
+  "2fa",
+  "account",
+  "accounts",
+  "authorize",
+  "billing",
+  "checkout",
+  "login",
+  "log-in",
+  "mfa",
+  "oauth",
+  "orders",
+  "passkey",
+  "password",
+  "payment",
+  "payments",
+  "portfolio",
+  "positions",
+  "recovery",
+  "security",
+  "sign-in",
+  "signin",
+  "sso",
+  "trade",
+  "trading",
+  "verification",
+  "verify",
+  "wallet",
+]);
+const SENSITIVE_QUERY_KEYS = new Set([
+  "access_token",
+  "auth_code",
+  "authorization_code",
+  "credential",
+  "id_token",
+  "password",
+  "session",
+  "session_id",
+  "token",
+]);
+
+function isPrivateHostname(hostname: string): boolean {
+  const host = hostname.replace(/^\[|\]$/gu, "").toLowerCase();
+  return host === "localhost" || host.endsWith(".localhost") || isPrivateIpAddress(host);
+}
+
+function isSensitiveBrowserUrl(url: URL): boolean {
+  if (url.username || url.password || isPrivateHostname(url.hostname)) {
+    return true;
+  }
+  const hostLabels = url.hostname.toLowerCase().split(".");
+  if (
+    hostLabels.some(
+      (label) =>
+        SENSITIVE_HOST_LABELS.has(label) ||
+        label.includes("bank") ||
+        label.includes("broker") ||
+        label.includes("payment") ||
+        label.includes("wallet"),
+    )
+  ) {
+    return true;
+  }
+  const hash = url.hash.replace(/^#/u, "");
+  const hashQueryOffset = hash.indexOf("?");
+  const hashPath = hashQueryOffset === -1 ? hash : hash.slice(0, hashQueryOffset);
+  const hashQuery = hashQueryOffset === -1 ? hash : hash.slice(hashQueryOffset + 1);
+  const pathSegments = `${url.pathname}/${hashPath}`
+    .toLowerCase()
+    .split("/")
+    .flatMap((segment) => segment.split(/[^a-z0-9-]+/u))
+    .filter(Boolean);
+  if (pathSegments.some((segment) => SENSITIVE_PATH_SEGMENTS.has(segment))) {
+    return true;
+  }
+  const queryKeys = [...url.searchParams.keys(), ...new URLSearchParams(hashQuery).keys()];
+  return queryKeys.some((key) => SENSITIVE_QUERY_KEYS.has(key.toLowerCase()));
 }
 
 function boundedString(value: unknown, maxChars: number): string {
@@ -138,13 +244,25 @@ function parseTabs(raw: unknown): BrowserTab[] {
 
 function eligibleTab(
   tab: BrowserTab,
-): { targetId: string; title: string; url: string } | undefined {
+):
+  | { kind: "capture"; tab: { targetId: string; title: string; url: string } }
+  | { kind: "protected" }
+  | { kind: "ineligible" } {
   const targetId = boundedString(tab.targetId, 512);
-  const url = normalizeHttpUrl(boundedString(tab.url, 16_384));
-  if (!targetId || !url || (typeof tab.type === "string" && tab.type !== "page")) {
-    return undefined;
+  const rawUrl = boundedString(tab.url, 16_384);
+  if (!targetId || !rawUrl || (typeof tab.type === "string" && tab.type !== "page")) {
+    return { kind: "ineligible" };
   }
-  return { targetId, title: boundedString(tab.title, 512), url };
+  if (tab.incognito === true) {
+    return { kind: "protected" };
+  }
+  const classified = classifyHttpUrl(rawUrl);
+  return classified.kind === "capture"
+    ? {
+        kind: "capture",
+        tab: { targetId, title: boundedString(tab.title, 512), url: classified.url },
+      }
+    : classified;
 }
 
 export class BrowserCaptureService {
@@ -243,6 +361,7 @@ export class BrowserCaptureService {
         recordedTabs: 0,
         duplicateTabs: 0,
         failedTabs: 0,
+        protectedTabs: 0,
         skippedTabs: 0,
         capturedAtMs,
         skipped: "capture_in_progress",
@@ -252,14 +371,31 @@ export class BrowserCaptureService {
     this.captureInProgress = true;
     try {
       const settings = await this.readSettings();
+      const browserStatus = await this.browserRequest({
+        method: "GET",
+        path: "/",
+        query: { profile: settings.profile },
+      });
+      if (
+        !browserStatus ||
+        typeof browserStatus !== "object" ||
+        !("transport" in browserStatus) ||
+        browserStatus.transport !== "extension"
+      ) {
+        throw new Error(
+          `passive browser capture requires an extension browser profile so private-window exclusions are enforced; profile ${settings.profile} is not extension-backed`,
+        );
+      }
       const listed = await this.browserRequest({
         method: "GET",
         path: "/tabs",
         query: { profile: settings.profile },
       });
-      const allEligibleTabs = parseTabs(listed)
-        .map(eligibleTab)
-        .filter((tab): tab is NonNullable<ReturnType<typeof eligibleTab>> => tab !== undefined);
+      const candidates = parseTabs(listed).map(eligibleTab);
+      let protectedTabs = candidates.filter((candidate) => candidate.kind === "protected").length;
+      const allEligibleTabs = candidates
+        .filter((candidate) => candidate.kind === "capture")
+        .map((candidate) => candidate.tab);
       const tabs = allEligibleTabs.slice(0, MAX_TABS_PER_CAPTURE);
       const latestByTab = new Map<string, BrowserCaptureRecord>();
       for (const entry of await this.deps.records.entries()) {
@@ -295,15 +431,21 @@ export class BrowserCaptureService {
             throw new Error("browser page text response was invalid");
           }
           const reportedUrl = boundedString("url" in rawText ? rawText.url : undefined, 16_384);
-          const currentUrl = reportedUrl ? normalizeHttpUrl(reportedUrl) : tab.url;
-          if (!currentUrl) {
+          const currentUrl = reportedUrl
+            ? classifyHttpUrl(reportedUrl)
+            : { kind: "capture" as const, url: tab.url };
+          if (currentUrl.kind === "protected") {
+            protectedTabs += 1;
+            continue;
+          }
+          if (currentUrl.kind === "ineligible") {
             throw new Error("browser page changed to an ineligible URL during capture");
           }
           const recordBase = {
             profile: settings.profile,
             targetId: tab.targetId,
             title: tab.title,
-            url: currentUrl,
+            url: currentUrl.url,
             text: boundedString(rawText.text, settings.maxChars),
           };
           const hash = contentHash(recordBase);
@@ -334,6 +476,7 @@ export class BrowserCaptureService {
         recordedTabs,
         duplicateTabs,
         failedTabs,
+        protectedTabs,
         skippedTabs: allEligibleTabs.length - tabs.length,
         capturedAtMs,
       };
