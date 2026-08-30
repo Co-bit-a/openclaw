@@ -685,7 +685,7 @@ describe("splitTelegramRichBlocks", () => {
       type: "table",
       caption: "Table caption",
       cells: Array.from({ length: 6 }, (_, index) => [
-        [{ text: `row ${index}`, align: "left", valign: "middle" }],
+        [{ text: `row ${index}`, align: "left" as const, valign: "middle" as const }],
       ]).flat(),
     };
     const collage: InputRichBlock = {
