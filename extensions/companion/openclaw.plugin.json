@@ -7,7 +7,7 @@
     "onStartup": true
   },
   "contracts": {
-    "tools": ["companion_ports", "companion_port_registry"]
+    "tools": ["companion_ports", "companion_port_registry", "companion_project_audit"]
   },
   "toolMetadata": {
     "companion_ports": {
@@ -17,6 +17,10 @@
     "companion_port_registry": {
       "optional": true,
       "sideEffecting": true
+    },
+    "companion_project_audit": {
+      "optional": true,
+      "replaySafe": true
     }
   },
   "configSchema": {

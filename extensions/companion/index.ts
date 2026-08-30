@@ -1,5 +1,6 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import type { PortRegistration } from "./src/ports.js";
+import { createCompanionProjectAuditTool } from "./src/project-audit-tool.js";
 import { createCompanionPortTools } from "./src/tools.js";
 
 const MAX_PORT_REGISTRATIONS = 512;
@@ -21,10 +22,14 @@ export default definePluginEntry({
         if (context.senderIsOwner !== true) {
           return null;
         }
-        return createCompanionPortTools({ registrations });
+        const tools = createCompanionPortTools({ registrations });
+        if (context.workspaceDir) {
+          tools.push(createCompanionProjectAuditTool(context.workspaceDir));
+        }
+        return tools;
       },
       {
-        names: ["companion_ports", "companion_port_registry"],
+        names: ["companion_ports", "companion_port_registry", "companion_project_audit"],
         optional: true,
       },
     );
