@@ -7,7 +7,13 @@
     "onStartup": true
   },
   "contracts": {
-    "tools": ["companion_ports", "companion_port_registry", "companion_project_audit"]
+    "tools": [
+      "companion_ports",
+      "companion_port_registry",
+      "companion_project_audit",
+      "companion_browser_capture",
+      "companion_browser_history"
+    ]
   },
   "toolMetadata": {
     "companion_ports": {
@@ -19,6 +25,14 @@
       "sideEffecting": true
     },
     "companion_project_audit": {
+      "optional": true,
+      "replaySafe": true
+    },
+    "companion_browser_capture": {
+      "optional": true,
+      "sideEffecting": true
+    },
+    "companion_browser_history": {
       "optional": true,
       "replaySafe": true
     }
