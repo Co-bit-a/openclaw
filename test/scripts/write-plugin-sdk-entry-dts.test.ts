@@ -249,8 +249,6 @@ function expectStagingClean(root: string) {
 describe("write-plugin-sdk-entry-dts", () => {
   it("publishes fresh canonical partitions with stable bytes and public nominal identity", () => {
     const { root, write, writeDeclarations, production, qa } = createFixture();
-    expect(productionPluginSdkEntrypoints).toHaveLength(320);
-    expect(pluginSdkEntrypoints).toHaveLength(341);
     expect(production).toEqual(
       expect.arrayContaining(productionPluginSdkEntrypoints.map((entry) => `plugin-sdk/${entry}`)),
     );

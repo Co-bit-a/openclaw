@@ -112,14 +112,19 @@ subprocess compiler or compile workers. A shard that needs a declaration request
 outer runner's single build through its existing Node IPC channel during module
 collection, before fixture hooks and readiness deadlines. Every finite invocation
 that needs a declaration pays for this fixed entry set; preparation timing is
-reported separately from child execution. No shard can
-select a different build graph or adopt another invocation's output. The outer
+reported separately from child execution. The runner starts one short-lived native
+Node or Bun compiler child and joins it before returning the verified manifest to
+borrowers. The compiler module graph lives in that child, not the long-lived runner
+or Vitest worker. No shard can select a different build graph or adopt another invocation's output. The outer
 runner retains the generation until child close and process-group cleanup
 finish, then verifies it before reporting success. Standalone Vitest and watch runs retain
 source execution: its public close hooks run concurrently with pool shutdown,
 so compilation and artifact deletion require the repository runner's ownership.
 A lost owner or failed build fails the run.
-Abnormal termination can leave an unused directory; later runs never adopt it.
+Disposal cancels pending compilation and joins it and every borrower before
+removing the directory. An uncertain compiler or borrower join retains the
+generation and fails the run. Abnormal termination can also leave an unused
+directory; later runs never adopt it.
 
 Every preparation compiles current source; checkout `dist/` is neither an input
 nor a fallback. Build errors, missing artifacts, and changes to recorded build

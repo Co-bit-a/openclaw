@@ -68,8 +68,8 @@ export function createFixtureLifetime() {
     verifyCleanup: (body: () => Promise<void>) => {
       return track(Promise.resolve().then(body), true);
     },
-    createTempDir: (prefix: string) => {
-      return makeTempDir(roots, prefix);
+    createTempDir: (prefix: string, root?: string) => {
+      return makeTempDir(roots, prefix, root);
     },
     cleanup() {
       // Timeout teardown can meet an already requested drain. Both callers must
