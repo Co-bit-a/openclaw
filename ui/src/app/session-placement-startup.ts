@@ -5,7 +5,11 @@ import {
   listSessionPlacementRecoveryStorageKeys,
   sessionPlacementRecoveryExactStorageKey,
 } from "../lib/sessions/session-placement-recovery-storage-key.ts";
-import type { SessionPlacementRecovery } from "../lib/sessions/session-placement-recovery.ts";
+import {
+  pauseSessionPlacementRecovery,
+  readSessionPlacementRecovery,
+  type SessionPlacementRecovery,
+} from "../lib/sessions/session-placement-recovery.ts";
 import type { ApplicationGateway } from "./gateway.ts";
 import type { ApplicationInitialUserMessageHandoff } from "./initial-user-message-handoff.ts";
 
@@ -46,6 +50,7 @@ export type ApplicationPlacementStartupRuntime = {
   resumeRecovery: () => void;
   start: (input: PlacementStartupInput) => void;
   retry: (sessionKey: string) => void;
+  pause: (sessionKey: string, error: string) => void;
   subscribe: (listener: () => void) => () => void;
   dispose: () => void;
 };
@@ -188,6 +193,34 @@ export function createApplicationPlacementStartup(
       );
     },
     start: resumeRecovery,
+    pause(sessionKey, error) {
+      const client = readyClient();
+      if (disposed || !client) {
+        return;
+      }
+      if (runtime) {
+        runtime.pause(sessionKey, error);
+        return;
+      }
+      const pending = preRuntimeEntries.get(sessionKey)?.();
+      const recovery =
+        pending?.recovery ??
+        readSessionPlacementRecovery(
+          gateway.connection.gatewayUrl,
+          client.recoveryScope,
+          sessionKey,
+        );
+      if (!recovery) {
+        return;
+      }
+      // Retire executable recovery before the lazy runtime can dispatch it or a reload can restore it.
+      resumeRecovery({
+        recovery: pauseSessionPlacementRecovery(recovery, error, pending?.persistRecovery ?? true),
+        persistRecovery: pending?.persistRecovery ?? true,
+        recovering: true,
+        createdAt: pending?.createdAt ?? Date.now(),
+      });
+    },
     retry(sessionKey) {
       const input = preRuntimeEntries.get(sessionKey)?.();
       if (input) {

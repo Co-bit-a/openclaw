@@ -538,10 +538,14 @@ export async function stopCloudWorker(
   }
   try {
     const agentId = parseAgentSessionKey(session.key)?.agentId ?? scope.selectedAgentId;
-    await requestCloudWorkerStop(scope.client, {
-      key: session.key,
-      agentId,
-    });
+    await requestCloudWorkerStop(
+      scope.client,
+      {
+        key: session.key,
+        agentId,
+      },
+      scope.context.placementStartup,
+    );
     if (!host.sessionData.isSessionMutationScopeCurrent(scope)) {
       return;
     }

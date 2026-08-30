@@ -17,6 +17,7 @@ import {
   admitWorkerStopChat,
   createWorkerStopChatContext,
 } from "./server-worker-placement.test-harness.js";
+import { coordinateWorkerPlacementDispatch } from "./worker-environments/placement-dispatch-coordinator.js";
 import { REQUEST } from "./worker-environments/placement-dispatch-test-fixtures.js";
 import { createHarness } from "./worker-environments/placement-dispatch-test-harness.js";
 import { createWorkerSessionPlacementStore } from "./worker-environments/placement-store.js";
@@ -144,14 +145,15 @@ async function scenario(
       },
     );
   }
+  const coordinated = coordinateWorkerPlacementDispatch(harness.service);
   let active;
   if (failedRetry) {
-    await expect(harness.service.dispatch(REQUEST)).rejects.toThrow("sync failed");
+    await expect(coordinated.dispatch(REQUEST)).rejects.toThrow("sync failed");
     active = placements.get(REQUEST.sessionId)!;
     expect(active.state).toBe("failed");
     expect(harness.environments.get(active.environmentId!)?.state).toBe("destroying");
   } else {
-    active = await harness.service.dispatch(REQUEST);
+    active = await coordinated.dispatch(REQUEST);
     expect(active.state).toBe("active");
   }
   const admit = (runId: string) =>
@@ -176,7 +178,7 @@ async function scenario(
     expect(context.chatAbortControllers.has(oldRunId)).toBe(false);
   };
   const stop = async () => {
-    const reclaim = harness.service.reclaim(REQUEST).then(
+    const reclaim = coordinated.reclaim(REQUEST).then(
       (value) => {
         return { ok: true, state: value.state };
       },
@@ -209,19 +211,28 @@ async function scenario(
     await stop();
   }
   const oldResult = await old.promise;
+  if (destroyFailure && !failedRetry) {
+    expect(oldResult.ok).toBe(false);
+    expect(harness.environments.get(active.environmentId!)?.state).toBe("destroying");
+    expect(harness.environments.destroy).toHaveBeenCalledOnce();
+    expect(placements.listPendingWorkspaceResults()).toEqual([
+      expect.objectContaining({ workspaceAcceptedAtMs: expect.any(Number) }),
+    ]);
+    await coordinated.reconcileActive();
+  }
   const finalPlacement = placements.get(REQUEST.sessionId);
   const environment = harness.environments.get(active.environmentId!);
   expect(environment?.state).toBe("destroyed");
   expect(harness.environments.destroy).toHaveBeenCalledTimes(destroyFailure ? 2 : 1);
   if (oldResult.ok) {
-    oldResult.value.cleanupAdmittedRun({ force: true });
+    oldResult.value.cleanupAdmittedRun();
     clearAgentRunContext(oldRunId, oldResult.value.lifecycleGeneration);
   }
   const freshRunId = name + "-explicit-after-stop";
   const fresh = admit(freshRunId);
   const freshResult = await fresh.promise;
   if (freshResult.ok) {
-    freshResult.value.cleanupAdmittedRun({ force: true });
+    freshResult.value.cleanupAdmittedRun();
     clearAgentRunContext(freshRunId, freshResult.value.lifecycleGeneration);
   }
   const report = {

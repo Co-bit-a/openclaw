@@ -1238,6 +1238,8 @@ export const en: TranslationMap = {
     stopCloudWorker: "Stop cloud worker…",
     stopCloudWorkerConfirm: 'Stop the cloud worker for "{session}"?',
     stopCloudWorkerConfirmAction: "Stop worker",
+    initialTurnPausedByWorkerStop:
+      "Cloud worker stop requested. Review the initial message before retrying.",
     stopCloudWorkerStale:
       'Gateway connection replaced before the cloud worker for "{session}" was stopped. Try again.',
     deleteSessionMenu: "Delete…",

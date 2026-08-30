@@ -3,6 +3,7 @@ import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { GatewaySessionRow } from "../../api/types.ts";
 import type { ApplicationGatewaySnapshot } from "../../app/context.ts";
 import { hasOperatorAdminAccess } from "../../app/operator-access.ts";
+import type { ApplicationPlacementStartup } from "../../app/session-placement-startup.ts";
 import {
   requestCloudWorkerStop,
   resolveCloudWorkerStopAction,
@@ -138,6 +139,7 @@ export async function reclaimChatPanePlacement(params: {
   connectionGeneration: number;
   gatewaySnapshot: ApplicationGatewaySnapshot;
   reclaimingKey: string | null;
+  placementStartup: ApplicationPlacementStartup;
   row: GatewaySessionRow;
   isCurrent: (client: GatewayBrowserClient, generation: number) => boolean;
   onReclaimingChange: (reclaimingKey: string | null) => void;
@@ -195,10 +197,14 @@ export async function reclaimChatPanePlacement(params: {
   const agentId = parseAgentSessionKey(params.row.key)?.agentId;
   params.onReclaimingChange(params.row.key);
   try {
-    await requestCloudWorkerStop(client, {
-      key: params.row.key,
-      ...(agentId ? { agentId } : {}),
-    });
+    await requestCloudWorkerStop(
+      client,
+      {
+        key: params.row.key,
+        ...(agentId ? { agentId } : {}),
+      },
+      params.placementStartup,
+    );
     if (params.isCurrent(client, connectionGeneration)) {
       await params.refreshReplacement(agentId);
     }

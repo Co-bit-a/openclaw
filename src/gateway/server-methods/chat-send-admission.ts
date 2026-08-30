@@ -486,7 +486,7 @@ export async function admitChatSend(params: {
         activeRunAbort.entry.abortStopReason = "restart";
       }
       activeRunAbort.controller.abort();
-      activeRunAbort.cleanup({ force: true });
+      activeRunAbort.cleanup();
     }
     gatewayWorkAdmission.release();
     if (!context.dedupe.has(`chat:${clientRunId}`)) {
@@ -528,7 +528,7 @@ export async function admitChatSend(params: {
   let releaseGatewayRootContinuation = () => {};
   // Until dispatch takes custody, interruption and callback failures own the same three resources.
   const cleanupPreDispatchAdmission = () => {
-    activeRunAbort.cleanup({ force: true });
+    activeRunAbort.cleanup();
     gatewayWorkAdmission.release();
     releaseGatewayRootContinuation();
   };
@@ -623,15 +623,15 @@ export async function admitChatSend(params: {
   // handler disarms it once the media becomes referenced (durable admission
   // or ACK handing ownership to dispatch, which persists on all paths).
   let discardAbandonedPreparedMedia: (() => void) | undefined;
-  const cleanupAdmittedRun: typeof activeRunAbort.cleanup = (options) => {
-    activeRunAbort.cleanup(options);
+  const cleanupAdmittedRun: typeof activeRunAbort.cleanup = () => {
+    activeRunAbort.cleanup();
     releaseInitialGatewayWorkAdmission();
     releaseGatewayRootContinuation();
     discardAbandonedPreparedMedia?.();
     discardAbandonedPreparedMedia = undefined;
   };
   const rejectSessionRoutingChanged = () => {
-    cleanupAdmittedRun({ force: true });
+    cleanupAdmittedRun();
     clearAgentRunContext(clientRunId, lifecycleGeneration);
     respondChatSessionRoutingChanged(respond);
   };

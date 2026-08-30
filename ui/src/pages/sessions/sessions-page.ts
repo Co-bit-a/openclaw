@@ -879,10 +879,14 @@ class SessionsPage extends OpenClawLightDomElement {
     let mutationError: string | null = null;
     try {
       const agentId = parseAgentSessionKey(row.key)?.agentId;
-      await requestCloudWorkerStop(scope.client, {
-        key: row.key,
-        ...(agentId ? { agentId } : {}),
-      });
+      await requestCloudWorkerStop(
+        scope.client,
+        {
+          key: row.key,
+          ...(agentId ? { agentId } : {}),
+        },
+        scope.context.placementStartup,
+      );
       if (this.isRequestScopeCurrent(scope)) {
         await this.refreshSessionList(scope);
       }

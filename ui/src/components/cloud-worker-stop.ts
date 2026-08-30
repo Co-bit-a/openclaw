@@ -1,6 +1,8 @@
 import { isCloudWorkerPlacementState } from "../../../packages/gateway-protocol/src/schema/session-placement-state.js";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
 import type { GatewaySessionRow } from "../api/types.ts";
+import type { ApplicationPlacementStartup } from "../app/session-placement-startup.ts";
+import { t } from "../i18n/index.ts";
 
 export type CloudWorkerStopAction = {
   method: "sessions.reclaim";
@@ -22,9 +24,11 @@ export function resolveCloudWorkerStopAction(
 }
 
 export async function requestCloudWorkerStop(
-  client: GatewayBrowserClient,
+  client: Pick<GatewayBrowserClient, "request">,
   session: { key: string; agentId?: string },
+  startup: Pick<ApplicationPlacementStartup, "pause">,
 ): Promise<void> {
+  startup.pause(session.key, t("sessionsView.initialTurnPausedByWorkerStop"));
   await client.request(
     "sessions.reclaim",
     { key: session.key, ...(session.agentId ? { agentId: session.agentId } : {}) },
