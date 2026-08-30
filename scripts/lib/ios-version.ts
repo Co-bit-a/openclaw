@@ -4,13 +4,9 @@ import path from "node:path";
 import { parseReleaseVersion } from "./release-version.mjs";
 
 const IOS_CHANGELOG_FILE = "apps/ios/CHANGELOG.md";
-export const MAX_IOS_APP_STORE_REVISION = 9;
 
 type ResolvedIosVersion = {
-  appStoreRevision: number | null;
-  appStoreVersion: string | null;
   canonicalVersion: string;
-  gatewayVersion: string;
   marketingVersion: string;
   buildVersion: string;
   changelogPath: string;
@@ -40,43 +36,6 @@ export function normalizePinnedIosVersion(rawVersion: string): string {
   }
 
   return pinnedVersion;
-}
-
-export function normalizeIosAppStoreRevision(rawRevision: string | number): number {
-  const normalized = String(rawRevision).trim();
-  if (!/^(?:0|[1-9]\d*)$/u.test(normalized)) {
-    throw new Error(
-      `Invalid iOS App Store revision '${rawRevision}'. Expected an integer from 0 to ${MAX_IOS_APP_STORE_REVISION}.`,
-    );
-  }
-
-  const revision = Number(normalized);
-  if (!Number.isSafeInteger(revision) || revision > MAX_IOS_APP_STORE_REVISION) {
-    throw new Error(
-      `Invalid iOS App Store revision '${rawRevision}'. Expected an integer from 0 to ${MAX_IOS_APP_STORE_REVISION}.`,
-    );
-  }
-  return revision;
-}
-
-export function encodeIosAppStoreVersion(
-  gatewayVersion: string,
-  appStoreRevision: string | number,
-): string {
-  const canonicalVersion = normalizePinnedIosVersion(gatewayVersion);
-  const parsed = parseReleaseVersion(canonicalVersion);
-  if (!parsed) {
-    throw new Error(`Unable to encode invalid gateway version '${gatewayVersion}'.`);
-  }
-
-  const revision = normalizeIosAppStoreRevision(appStoreRevision);
-  // Append one revision digit without padding. Keeping the revision to one
-  // digit preserves App Store ordering when the gateway patch increments.
-  const encodedPatch = Number(`${parsed.patch}${revision}`);
-  if (!Number.isSafeInteger(encodedPatch)) {
-    throw new Error(`Encoded iOS App Store version is too large for '${gatewayVersion}'.`);
-  }
-  return `${parsed.year}.${parsed.month}.${encodedPatch}`;
 }
 
 export function normalizeGatewayVersionToPinnedIosVersion(rawVersion: string): string {
@@ -122,27 +81,17 @@ export function resolveGatewayVersionForIosRelease(rootDir = path.resolve(".")):
 
 export function resolveIosVersion(
   rootDir = path.resolve("."),
-  options?: { appStoreRevision?: string | number | null; releaseVersion?: string | null },
+  options?: { releaseVersion?: string | null },
 ): ResolvedIosVersion {
   const changelogPath = path.join(rootDir, IOS_CHANGELOG_FILE);
   const explicitReleaseVersion = options?.releaseVersion?.trim() ?? "";
   const canonicalVersion = explicitReleaseVersion
     ? normalizePinnedIosVersion(explicitReleaseVersion)
     : resolveGatewayVersionForIosRelease(rootDir).pinnedIosVersion;
-  const rawAppStoreRevision = options?.appStoreRevision;
-  const appStoreRevision =
-    rawAppStoreRevision === null || rawAppStoreRevision === undefined
-      ? null
-      : normalizeIosAppStoreRevision(rawAppStoreRevision);
-  const appStoreVersion =
-    appStoreRevision === null ? null : encodeIosAppStoreVersion(canonicalVersion, appStoreRevision);
 
   return {
-    appStoreRevision,
-    appStoreVersion,
     canonicalVersion,
-    gatewayVersion: canonicalVersion,
-    marketingVersion: appStoreVersion ?? canonicalVersion,
+    marketingVersion: canonicalVersion,
     buildVersion: "1",
     changelogPath,
     versionSource: explicitReleaseVersion ? "explicit" : "package",
@@ -181,27 +130,21 @@ export function renderIosReleaseNotes(
   version: ResolvedIosVersion,
   changelogContent: string,
 ): string {
-  const candidateHeadings =
-    version.appStoreRevision === null
-      ? [version.canonicalVersion, "Unreleased"]
-      : [version.marketingVersion];
+  const candidateHeadings = [version.canonicalVersion, "Unreleased"];
 
   for (const heading of candidateHeadings) {
     const body = extractChangelogSection(changelogContent, heading);
     if (body) {
-      const gatewayPrefix =
-        version.appStoreRevision === null ? "" : `Gateway version: ${version.gatewayVersion}\n\n`;
-      return `${gatewayPrefix}${body}\n`;
+      return `${body}\n`;
     }
   }
 
   throw new Error(
-    `Unable to find iOS changelog notes for ${version.marketingVersion}. Add a matching section to ${IOS_CHANGELOG_FILE}.`,
+    `Unable to find iOS changelog notes for ${version.canonicalVersion}. Add a matching section to ${IOS_CHANGELOG_FILE}.`,
   );
 }
 
 export function syncIosVersioning(params?: {
-  appStoreRevision?: string | number | null;
   mode?: SyncIosVersioningMode;
   releaseVersion?: string | null;
   rootDir?: string;
@@ -210,10 +153,7 @@ export function syncIosVersioning(params?: {
 } {
   const rootDir = path.resolve(params?.rootDir ?? ".");
   const releaseVersion = params?.releaseVersion;
-  const version = resolveIosVersion(rootDir, {
-    appStoreRevision: params?.appStoreRevision,
-    releaseVersion,
-  });
+  const version = resolveIosVersion(rootDir, { releaseVersion });
   const changelogContent = readFileSync(version.changelogPath, "utf8");
   renderIosReleaseNotes(version, changelogContent);
 
@@ -221,15 +161,11 @@ export function syncIosVersioning(params?: {
 }
 
 export function renderIosReleaseNotesForVersion(params?: {
-  appStoreRevision?: string | number | null;
   releaseVersion?: string | null;
   rootDir?: string;
 }): string {
   const rootDir = path.resolve(params?.rootDir ?? ".");
-  const version = resolveIosVersion(rootDir, {
-    appStoreRevision: params?.appStoreRevision,
-    releaseVersion: params?.releaseVersion,
-  });
+  const version = resolveIosVersion(rootDir, { releaseVersion: params?.releaseVersion });
   const changelogContent = readFileSync(version.changelogPath, "utf8");
   return renderIosReleaseNotes(version, changelogContent);
 }
