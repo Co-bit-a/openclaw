@@ -496,13 +496,19 @@ describe("describeReplyTarget", () => {
               type: "photo",
               caption: { text: "Chart", credit: "OpenClaw" },
             },
+            {
+              type: "buttons",
+              buttons: [{ text: "Copy result", copy_text: { text: "result" } }],
+            },
           ],
         },
         from: { id: 42, first_name: "Alice", is_bot: false },
       },
     } as never);
 
-    expect(result?.body).toBe("Run summary\n1.\nCI clean\na^2+b^2=c^2\nChart\nOpenClaw");
+    expect(result?.body).toBe(
+      "Run summary\n1.\nCI clean\na^2+b^2=c^2\nChart\nOpenClaw\nCopy result",
+    );
     expect(result?.quoteSourceText).toBeUndefined();
   });
 

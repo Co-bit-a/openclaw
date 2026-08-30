@@ -1219,7 +1219,6 @@ extensions/teams-meetings/src/transports/teams-meetings-urls.ts	1
 extensions/telegram/src/account-selection.ts	1
 extensions/telegram/src/account-throttler.ts	4
 extensions/telegram/src/action-runtime.ts	6
-extensions/telegram/src/allowed-updates.ts	1
 extensions/telegram/src/api-fetch.ts	1
 extensions/telegram/src/approval-handler.runtime.ts	2
 extensions/telegram/src/approval-native.ts	1
@@ -1280,8 +1279,7 @@ extensions/telegram/src/probe.ts	3
 extensions/telegram/src/raw-update-log.ts	1
 extensions/telegram/src/reply-parameters.ts	2
 extensions/telegram/src/request-timeouts.ts	1
-extensions/telegram/src/rich-blocks-html-map.ts	1
-extensions/telegram/src/rich-message.ts	2
+extensions/telegram/src/rich-message.ts	1
 extensions/telegram/src/security-audit.ts	7
 extensions/telegram/src/send-actions.ts	2
 extensions/telegram/src/send-context.ts	2

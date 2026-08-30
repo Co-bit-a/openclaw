@@ -361,8 +361,9 @@ function renderTableBlock(table: MarkdownTableMeta): {
     const text = cellToRichText(cell);
     return {
       is_header: true,
+      align: align ?? "left",
+      valign: "middle",
       ...(text !== undefined ? { text } : {}),
-      ...(align ? { align } : {}),
     };
   });
   const bodyRows: RichBlockTableCell[][] = table.rowCells.map((row) =>
@@ -370,8 +371,9 @@ function renderTableBlock(table: MarkdownTableMeta): {
       const align = table.aligns?.[index];
       const text = cellToRichText(row[index]);
       return {
+        align: align ?? "left",
+        valign: "middle",
         ...(text !== undefined ? { text } : {}),
-        ...(align ? { align } : {}),
       };
     }),
   );
