@@ -321,7 +321,7 @@ describe.skipIf(process.platform === "win32")("dist artifact ownership", () => {
           import { runManagedCommand } from ${JSON.stringify(moduleUrl("managed-child-process.mts"))};
           process.exitCode = await withDistArtifactOwnership(process.cwd(), () => runManagedCommand({
             bin: process.execPath,
-            args: ['--import', ${JSON.stringify(hook)}, ...distArtifactEntryArgs(${JSON.stringify(path.join(root, "scripts", script))})],
+            args: ['--import', ${JSON.stringify(pathToFileURL(hook).href)}, ...distArtifactEntryArgs(${JSON.stringify(path.join(root, "scripts", script))})],
             requireProcessTreeExit: true,
           }));
         `,

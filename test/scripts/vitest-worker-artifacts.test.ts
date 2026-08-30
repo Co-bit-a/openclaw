@@ -490,7 +490,7 @@ describe("fresh compiled subprocess invocation", () => {
           // module cache or a production build flag. node() joins this direct child.
           const result = await node([
             "--import",
-            preload,
+            pathToFileURL(preload).href,
             path.join(root, compilerEntry),
             owner.descriptor.directory,
           ]);
@@ -546,7 +546,10 @@ describe("fresh compiled subprocess invocation", () => {
             const poll=setInterval(()=>{
               if(!fs.existsSync(\${JSON.stringify(path.join(directory,'leaf-release'))})) return;
               fs.accessSync(\${JSON.stringify(process.argv[2])});
-              fs.writeFileSync(\${JSON.stringify(path.join(directory,'leaf-read'))},'retained input');
+              // Existence is readiness: publish only the completed receipt.
+              const receipt=\${JSON.stringify(path.join(directory,'leaf-read'))};
+              fs.writeFileSync(receipt+'.tmp','retained input');
+              fs.renameSync(receipt+'.tmp',receipt);
               clearInterval(poll);
             },5);
             fs.writeFileSync(\${JSON.stringify(path.join(directory,'leaf-pid'))},String(process.pid));
@@ -584,7 +587,7 @@ describe("fresh compiled subprocess invocation", () => {
       let compiler, closed=false, ready=false, finished=false, readyClosed, leafPid;
       cp.spawn=(bin,args,options)=>{
         if(args[0]!==${JSON.stringify(path.join(root, compilerEntry))}) return spawn(bin,args,options);
-        compiler=spawn(bin,['--import',${JSON.stringify(preload)},...args],options);
+        compiler=spawn(bin,['--import',${JSON.stringify(pathToFileURL(preload).href)},...args],options);
         compiler.once('close',()=>{closed=true;});
         return compiler;
       };
@@ -1220,7 +1223,7 @@ describe("fresh compiled subprocess invocation", () => {
         const handle = startBorrower(
           owner,
           ["run", "--config", config, "--project", "second"],
-          action === "owner disconnect" ? ["--import", disconnect] : [],
+          action === "owner disconnect" ? ["--import", pathToFileURL(disconnect).href] : [],
         );
         try {
           const observed = path.join(directory, "generations.jsonl");

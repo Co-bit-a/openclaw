@@ -12,7 +12,7 @@ import { createScriptTestHarness } from "./test-helpers.js";
 
 const { createTempDir } = createScriptTestHarness();
 const sourceRoot = process.cwd();
-const loader = path.resolve("scripts/tsx.mjs");
+const loader = pathToFileURL(path.resolve("scripts/tsx.mjs")).href;
 const writer = path.resolve("scripts/write-plugin-sdk-entry-dts.ts");
 const compiler = path.resolve("scripts/run-tsgo.mjs");
 const declarationInputs = [
