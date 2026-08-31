@@ -1,9 +1,10 @@
 ---
-summary: "Use Companion to track local service ports and audit project directories"
+summary: "Use Companion to track ports, audit projects, and keep an opt-in browser journal"
 read_when:
   - You run several local projects that may claim the same TCP port
   - You want OpenClaw to check declared ports before starting a service
   - You want a read-only review of stale, disposable-looking, or duplicate projects
+  - You want a bounded local record of web pages exposed by the Chrome extension
 title: "Companion"
 ---
 
@@ -57,3 +58,20 @@ caches are not traversed. Scan depth, project count, files, and bytes are bounde
 
 The audit does not call a project abandoned merely because it is old, and it never moves or deletes
 anything. Treat every result as evidence for manual review.
+
+## Passive browser recording
+
+`companion_browser_capture` controls an opt-in background recorder. It is off by default even when
+the Companion plugin is enabled. Start it explicitly to poll the built-in `chrome` extension profile
+every 30 seconds, or choose another profile, interval, and per-page text limit. `stop` pauses future
+polls without deleting existing records, while `capture_now` runs one bounded poll immediately.
+
+Each poll reads at most eight eligible HTTP or HTTPS tabs and extracts visible page prose without
+navigating, clicking, or changing the page. URL credentials, query strings, and fragments are not
+stored. Unchanged content is deduplicated, and the local record store evicts its oldest entry after
+2,000 entries. `companion_browser_history` returns up to 20 recent matching records and marks all
+page-controlled content as external and untrusted before it reaches the agent.
+
+Tab eligibility still follows the Chrome extension's access controls. Pause a tab in the extension,
+or use Selected tabs mode, when it should not be exposed to OpenClaw. The recorder does not start
+merely because the extension or Companion plugin is active.
