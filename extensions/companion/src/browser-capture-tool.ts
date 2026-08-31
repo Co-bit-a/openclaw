@@ -44,7 +44,7 @@ export function createCompanionBrowserCaptureTools(service: BrowserCaptureServic
       name: "companion_browser_capture",
       label: "Companion Browser Capture",
       description:
-        "Start, stop, inspect, or run the owner's opt-in passive browser content recorder. It reads eligible ordinary pages exposed by the OpenClaw browser extension, never navigates or changes a tab, and remains off until explicitly started.",
+        "Start, stop, inspect, or run the owner's opt-in passive browser content recorder. It reads eligible ordinary pages exposed by an OpenClaw browser extension profile, never navigates or changes a tab, hard-excludes private and sensitive pages, and remains off until explicitly started.",
       parameters: BrowserCaptureParamsSchema,
       async execute(_toolCallId, rawParams) {
         const params = asOptionalRecord(rawParams) ?? {};

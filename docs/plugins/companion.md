@@ -63,14 +63,26 @@ anything. Treat every result as evidence for manual review.
 
 `companion_browser_capture` controls an opt-in background recorder. It is off by default even when
 the Companion plugin is enabled. Start it explicitly to poll the built-in `chrome` extension profile
-every 30 seconds, or choose another profile, interval, and per-page text limit. `stop` pauses future
-polls without deleting existing records, while `capture_now` runs one bounded poll immediately.
+every 30 seconds, or choose another extension-backed profile, interval, and per-page text limit.
+`stop` pauses future polls without deleting existing records, while `capture_now` runs one bounded
+poll immediately.
+
+Passive recording accepts extension-backed browser profiles only. This preserves the Chrome
+extension's hard exclusion for incognito windows; a managed CDP or existing-session profile is
+rejected before tabs are listed.
 
 Each poll reads at most eight eligible HTTP or HTTPS tabs and extracts visible page prose without
-navigating, clicking, or changing the page. URL credentials, query strings, and fragments are not
-stored. Unchanged content is deduplicated, and the local record store evicts its oldest entry after
-2,000 entries. `companion_browser_history` returns up to 20 recent matching records and marks all
-page-controlled content as external and untrusted before it reaches the agent.
+navigating, clicking, or changing the page. Pages with URL credentials are excluded; query strings
+and fragments are not stored. Unchanged content is deduplicated, and the local record store evicts
+its oldest entry after 2,000 entries. `companion_browser_history` returns up to 20 recent matching
+records and marks all page-controlled content as external and untrusted before it reaches the agent.
+
+The recorder also excludes sensitive URLs before requesting page text and checks again after text
+extraction in case the tab navigated. Protected categories include authentication and account pages,
+banking, brokerage, payment, portfolio, trading, and wallet paths, URLs carrying credential-like
+parameters, and local or private-network hosts. Exclusions are fixed safety boundaries and cannot be
+overridden by tool parameters. Capture summaries report the number of protected tabs without
+returning their titles, URLs, or text.
 
 Tab eligibility still follows the Chrome extension's access controls. Pause a tab in the extension,
 or use Selected tabs mode, when it should not be exposed to OpenClaw. The recorder does not start
