@@ -92,6 +92,18 @@
     "target": "clawrouter"
   },
   {
+    "source": "Companion",
+    "target": "Companion"
+  },
+  {
+    "source": "Companion plugin",
+    "target": "Companion 插件"
+  },
+  {
+    "source": "companion",
+    "target": "companion"
+  },
+  {
     "source": "OpenAI",
     "target": "OpenAI"
   },

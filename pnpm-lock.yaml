@@ -810,6 +810,16 @@ importers:
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
+  extensions/companion:
+    dependencies:
+      typebox:
+        specifier: 1.3.16
+        version: 1.3.16
+    devDependencies:
+      '@openclaw/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+
   extensions/copilot:
     dependencies:
       '@github/copilot-sdk':

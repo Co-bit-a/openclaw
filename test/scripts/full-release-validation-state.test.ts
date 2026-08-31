@@ -40,6 +40,7 @@ const SCRIPT = resolve("scripts/full-release-validation-state.mjs");
 const SHA = "a".repeat(40);
 const TARGET_SHA = "b".repeat(40);
 const TRUSTED_MAIN = { fullRef: "refs/heads/main", ref: "main", sha: SHA };
+const GITHUB_REPOSITORY = process.env.GITHUB_REPOSITORY ?? "openclaw/openclaw";
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
 function candidateRequestInput(overrides: Record<string, unknown> = {}) {
@@ -930,7 +931,7 @@ describe("release decision policy", () => {
         html_url: "https://example.invalid/runs/101",
         id: 101,
         path: ".github/workflows/ci.yml@refs/heads/release-ci/tooling",
-        repository: { full_name: "openclaw/openclaw" },
+        repository: { full_name: GITHUB_REPOSITORY },
         run_attempt: 2,
         status: "in_progress",
         updated_at: "2026-08-21T00:01:00Z",
@@ -978,7 +979,7 @@ describe("release decision policy", () => {
         html_url: planned.url,
         id: 101,
         path: ".github/workflows/ci.yml",
-        repository: { full_name: "openclaw/openclaw" },
+        repository: { full_name: GITHUB_REPOSITORY },
         run_attempt: 1,
         status: "completed",
         triggering_actor: { login: "github-actions[bot]" },
@@ -1097,7 +1098,7 @@ describe("release decision policy", () => {
           head_sha: "c".repeat(40),
           id: 101,
           path: ".github/workflows/ci.yml",
-          repository: { full_name: "openclaw/openclaw" },
+          repository: { full_name: GITHUB_REPOSITORY },
           run_attempt: 1,
           status: "completed",
           triggering_actor: { login: "github-actions[bot]" },
@@ -1168,7 +1169,7 @@ describe("release decision policy", () => {
         head_sha: planned.workflowSha,
         id: 101,
         path: ".github/workflows/ci.yml",
-        repository: { full_name: "openclaw/openclaw" },
+        repository: { full_name: GITHUB_REPOSITORY },
         run_attempt: 2,
         status: "in_progress",
         triggering_actor: { login: "github-actions[bot]" },
@@ -1200,7 +1201,7 @@ describe("release decision policy", () => {
             head_sha: planned.workflowSha,
             id: 101,
             path: ".github/workflows/ci.yml",
-            repository: { full_name: "openclaw/openclaw" },
+            repository: { full_name: GITHUB_REPOSITORY },
             run_attempt: 1,
             status: "in_progress",
             triggering_actor: { login: "github-actions[bot]" },

@@ -1,0 +1,27 @@
+{
+  "id": "companion",
+  "name": "Companion",
+  "description": "Local personal-assistant utilities for understanding and managing work across projects.",
+  "enabledByDefault": false,
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": ["companion_ports", "companion_port_registry"]
+  },
+  "toolMetadata": {
+    "companion_ports": {
+      "optional": true,
+      "replaySafe": true
+    },
+    "companion_port_registry": {
+      "optional": true,
+      "sideEffecting": true
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
